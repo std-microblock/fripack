@@ -1,0 +1,3 @@
+/target
+/*.so
+libfripack-inject.so

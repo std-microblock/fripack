@@ -1,1 +1,1 @@
-console.log("Hello, World!", Java, Interceptor);
+console.log("Hello, World! Fripack!", Java, Interceptor);
