@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use colored::*;
+use log::{info, warn};
 use std::path::PathBuf;
 
 mod binary;
@@ -51,7 +51,10 @@ enum CacheAction {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::init();
+    env_logger::Builder::from_default_env()
+        .format_timestamp(None)
+        .filter_level(log::LevelFilter::Info)
+        .init();
 
     let cli = Cli::parse();
 
@@ -71,7 +74,7 @@ async fn main() -> Result<()> {
 }
 
 async fn init_config(path: PathBuf) -> Result<()> {
-    println!("{}", "Initializing fripack configuration...".green().bold());
+    info!("Initializing fripack configuration...");
 
     let config_path = if path.is_dir() {
         path.join("fripack.json")
@@ -80,7 +83,7 @@ async fn init_config(path: PathBuf) -> Result<()> {
     };
 
     if config_path.exists() {
-        println!("{}", "Configuration file already exists!".yellow());
+        warn!("Configuration file already exists!");
         return Ok(());
     }
 
@@ -89,23 +92,21 @@ async fn init_config(path: PathBuf) -> Result<()> {
 
     tokio::fs::write(&config_path, config_json).await?;
 
-    println!(
-        "{} {}",
-        "✓".green(),
-        format!("Created configuration file: {}", config_path.display()).green()
+    info!(
+        "✓ Created configuration file: {}",
+        config_path.display()
     );
 
     Ok(())
 }
 
 async fn build_target(target: Option<String>) -> Result<()> {
-    println!("{}", "Building fripack targets...".green().bold());
+    info!("Building fripack targets...");
 
     let config_path = find_config_file(std::env::current_dir()?)?;
-    println!(
-        "{} {}",
-        "→".blue(),
-        format!("Using configuration: {}", config_path.display()).blue()
+    info!(
+        "→ Using configuration: {}",
+        config_path.display()
     );
 
     let config_dir = config_path.parent().unwrap_or(&std::path::Path::new("."));
@@ -122,40 +123,36 @@ async fn build_target(target: Option<String>) -> Result<()> {
                 .targets
                 .get(&target_name)
                 .context("Failed to find the target")?;
-            println!(
-                "{} {}",
-                "→".blue(),
-                format!("Building target: {}", target_name).blue()
+            info!(
+                "→ Building target: {}",
+                target_name
             );
             let mut builder = Builder::new(&resolved_config);
             builder.build_target(&target_name, target_config).await?;
-            println!(
-                "{} {}",
-                "✓".green(),
-                format!("Successfully built target: {}", target_name).green()
+            info!(
+                "✓ Successfully built target: {}",
+                target_name
             );
         }
         None => {
-            println!("{}", "Building all targets...".blue());
+            info!("Building all targets...");
             let mut builder = Builder::new(&resolved_config);
 
             for (target_name, target_config) in &resolved_config.targets {
-                println!(
-                    "{} {}",
-                    "→".blue(),
-                    format!("Building target: {}", target_name).blue()
+                info!(
+                    "→ Building target: {}",
+                    target_name
                 );
                 builder.build_target(target_name, target_config).await?;
-                println!(
-                    "{} {}",
-                    "✓".green(),
-                    format!("Successfully built target: {}", target_name).green()
+                info!(
+                    "✓ Successfully built target: {}",
+                    target_name
                 );
             }
         }
     }
 
-    println!("{}", "✓ All builds completed successfully!".green().bold());
+    info!("✓ All builds completed successfully!");
     Ok(())
 }
 
@@ -198,33 +195,31 @@ async fn handle_cache_action(action: CacheAction) -> Result<()> {
 }
 
 async fn query_cache(downloader: &Downloader) -> Result<()> {
-    println!("{}", "Cache Information".green().bold());
-    println!("{}", "================".green());
+    info!("Cache Information");
+    info!("================");
 
     let cache_dir = downloader.cache_dir();
-    println!("{} {}", "Cache Directory:".blue(), cache_dir.display());
+    info!("Cache Directory: {}", cache_dir.display());
 
     let stats = downloader.get_cache_stats().await?;
 
     if stats.file_count == 0 {
-        println!("{}", "No cached files found.".yellow());
+        warn!("No cached files found.");
         return Ok(());
     }
 
-    println!("{} {}", "Total Files:".blue(), stats.file_count);
-    println!(
-        "{} {}",
-        "Total Size:".blue(),
+    info!("Total Files: {}", stats.file_count);
+    info!(
+        "Total Size: {}",
         format_bytes(stats.total_size)
     );
 
-    println!("\n{}", "Cached Files:".green().bold());
-    println!("{}", "------------".green());
+    info!("\nCached Files:");
+    info!("------------");
 
     for file_info in stats.files {
-        println!(
-            "  {} {} ({})",
-            "•".blue(),
+        info!(
+            "  • {} ({})",
             file_info.name,
             format_bytes(file_info.size)
         );
@@ -234,33 +229,28 @@ async fn query_cache(downloader: &Downloader) -> Result<()> {
 }
 
 async fn clear_cache(downloader: &Downloader) -> Result<()> {
-    println!("{}", "Clearing Cache".red().bold());
-    println!("{}", "==============".red());
+    warn!("Clearing Cache");
+    warn!("==============");
 
     let stats = downloader.get_cache_stats().await?;
 
     if stats.file_count == 0 {
-        println!("{}", "No cached files to clear.".yellow());
+        warn!("No cached files to clear.");
         return Ok(());
     }
 
-    println!(
-        "{} {}",
-        "Found:".yellow(),
-        format!(
-            "{} files ({} total)",
-            stats.file_count,
-            format_bytes(stats.total_size)
-        )
+    info!(
+        "Found: {} files ({} total)",
+        stats.file_count,
+        format_bytes(stats.total_size)
     );
 
     let removed_count = downloader.clear_cache().await?;
 
     if removed_count > 0 {
-        println!(
-            "{} {}",
-            "✓".green(),
-            format!("Successfully removed {} cached files", removed_count).green()
+        info!(
+            "✓ Successfully removed {} cached files",
+            removed_count
         );
     }
 

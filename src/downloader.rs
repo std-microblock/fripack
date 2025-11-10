@@ -1,6 +1,6 @@
 use anyhow::Result;
-use colored::*;
 use dirs;
+use log::{info, warn};
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
@@ -30,10 +30,9 @@ impl Downloader {
     pub async fn ensure_cache_dir(&self) -> Result<()> {
         if !self.cache_dir.exists() {
             fs::create_dir_all(&self.cache_dir).await?;
-            println!(
-                "{} {}",
-                "✓".green(),
-                format!("Created cache directory: {}", self.cache_dir.display()).green()
+            info!(
+                "✓ Created cache directory: {}",
+                self.cache_dir.display()
             );
         }
         Ok(())
@@ -51,10 +50,9 @@ impl Downloader {
 
     async fn load_cached_file(&self, platform: &str, frida_version: &str) -> Result<Vec<u8>> {
         let cache_path = self.get_cache_file_path(platform, frida_version);
-        println!(
-            "{} {}",
-            "→".blue(),
-            format!("Loading from cache: {}", cache_path.display()).blue()
+        info!(
+            "→ Loading from cache: {}",
+            cache_path.display()
         );
         Ok(fs::read(&cache_path).await?)
     }
@@ -63,10 +61,9 @@ impl Downloader {
         self.ensure_cache_dir().await?;
         let cache_path = self.get_cache_file_path(platform, frida_version);
         fs::write(&cache_path, data).await?;
-        println!(
-            "{} {}",
-            "→".blue(),
-            format!("Cached to: {}", cache_path.display()).blue()
+        info!(
+            "→ Cached to: {}",
+            cache_path.display()
         );
         Ok(())
     }
@@ -91,7 +88,7 @@ impl Downloader {
 
     pub async fn clear_cache(&self) -> Result<usize> {
         if !self.cache_dir.exists() {
-            println!("{}", "Cache directory does not exist.".yellow());
+            warn!("Cache directory does not exist.");
             return Ok(0);
         }
 
@@ -104,13 +101,12 @@ impl Downloader {
         }
 
         if count > 0 {
-            println!(
-                "{} {}",
-                "✓".green(),
-                format!("Removed {} cached files", count).green()
+            info!(
+                "✓ Removed {} cached files",
+                count
             );
         } else {
-            println!("{}", "No cached files to remove.".yellow());
+            warn!("No cached files to remove.");
         }
 
         Ok(count)
@@ -166,10 +162,9 @@ impl Downloader {
         let url = matched_file.download_url;
         let filename = matched_file.name;
 
-        println!(
-            "{} {}",
-            "→".blue(),
-            format!("Downloading prebuilt file: {}", filename).blue()
+        info!(
+            "→ Downloading prebuilt file: {}",
+            filename
         );
 
         let response = self.client.get(&url).send().await?;
@@ -210,7 +205,7 @@ impl Downloader {
     }
 
     pub async fn download_to_file(&self, url: &str, path: &Path) -> Result<()> {
-        println!("{} {}", "→".blue(), format!("Downloading: {}", url).blue());
+        info!("→ Downloading: {}", url);
 
         let response = self.client.get(url).send().await?;
 
@@ -245,10 +240,9 @@ impl Downloader {
         file.flush().await?;
         pb.finish_with_message("Download complete!");
 
-        println!(
-            "{} {}",
-            "✓".green(),
-            format!("Saved to: {}", path.display()).green()
+        info!(
+            "✓ Saved to: {}",
+            path.display()
         );
 
         Ok(())
@@ -361,14 +355,9 @@ impl Downloader {
 
             for keyword in &platform_keywords {
                 if filename.contains(&keyword.to_lowercase()) {
-                    println!(
-                        "{} {}",
-                        "⚠".yellow(),
-                        format!(
-                            "Warning: Found platform match but version may not match exactly: {}",
-                            file.name
-                        )
-                        .yellow()
+                    warn!(
+                        "⚠ Warning: Found platform match but version may not match exactly: {}",
+                        file.name
                     );
                     return Ok(file.clone());
                 }
@@ -377,14 +366,9 @@ impl Downloader {
 
         for file in files {
             if file.name.ends_with(".so") {
-                println!(
-                    "{} {}",
-                    "⚠".yellow(),
-                    format!(
-                        "Warning: Using fallback file (no platform match): {}",
-                        file.name
-                    )
-                    .yellow()
+                warn!(
+                    "⚠ Warning: Using fallback file (no platform match): {}",
+                    file.name
                 );
                 return Ok(file.clone());
             }

@@ -2,8 +2,7 @@ use crate::binary::{BinaryProcessor, EmbeddedConfig};
 use crate::config::{ResolvedConfig, ResolvedTarget};
 use crate::downloader::Downloader;
 use anyhow::Result;
-use colored::*;
-use log::warn;
+use log::{info, warn};
 use rand::Rng;
 use std::path::{Path, PathBuf};
 use tempfile;
@@ -66,33 +65,21 @@ impl Builder {
 
         // Get prebuilt file data
         let prebuilt_data = if let Some(override_file) = &target.override_prebuild_file {
-            println!(
-                "{} {}",
-                "→".blue(),
-                format!("Using override prebuilt file: {}", override_file).blue()
-            );
+            info!("→ Using override prebuilt file: {}", override_file);
             fs::read(override_file).await?
         } else {
-            println!(
-                "{} {}",
-                "→".blue(),
-                format!("Downloading prebuilt file for platform: {}", platform).blue()
-            );
+            info!("→ Downloading prebuilt file for platform: {}", platform);
             self.downloader
                 .download_prebuilt_file(platform, frida_version)
                 .await?
         };
 
         // Read entry file
-        println!(
-            "{} {}",
-            "→".blue(),
-            format!("Reading entry file: {}", entry).blue()
-        );
+        info!("→ Reading entry file: {}", entry);
         let entry_data = fs::read(entry).await?;
 
         // Process the binary
-        println!("{} {}", "→".blue(), "Processing binary...".blue());
+        info!("→ Processing binary...");
         let mut processor = BinaryProcessor::new(prebuilt_data)?;
 
         let config_data = EmbeddedConfigData {
@@ -114,11 +101,7 @@ impl Builder {
     }
 
     async fn build_android_so(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<()> {
-        println!(
-            "{} {}",
-            "→".blue(),
-            format!("Building Android SO target: {}", target_name).blue()
-        );
+        info!("→ Building Android SO target: {}", target_name);
 
         let output_dir = target.output_dir.as_deref().unwrap_or("./fripack");
 
@@ -132,25 +115,16 @@ impl Builder {
         std::fs::create_dir_all(output_dir)?;
         fs::write(&output_file_path, output_data).await?;
 
-        println!(
-            "{} {}",
-            "✓".green(),
-            format!(
-                "Successfully built Android SO: {}",
-                output_file_path.display()
-            )
-            .green()
+        info!(
+            "✓ Successfully built Android SO: {}",
+            output_file_path.display()
         );
 
         Ok(())
     }
 
     async fn build_xposed(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<()> {
-        println!(
-            "{} {}",
-            "→".blue(),
-            format!("Building Xposed target: {}", target_name).blue()
-        );
+        info!("→ Building Xposed target: {}", target_name);
 
         // Get required fields
         let platform = target
@@ -174,11 +148,7 @@ impl Builder {
         // 3. Create a temporary directory for the apktool project
         let temp_dir = tempfile::tempdir()?;
         let temp_path = temp_dir.path();
-        println!(
-            "{} {}",
-            "→".blue(),
-            format!("Created temporary directory: {}", temp_path.display()).blue()
-        );
+        info!("→ Created temporary directory: {}", temp_path.display());
 
         // Move the generated .so file to the temporary directory for now
         let temp_so_path = temp_path.join(&random_so_name);
@@ -190,11 +160,7 @@ impl Builder {
 
         let native_init_path = assets_dir.join("native_init");
         fs::write(&native_init_path, &random_so_name).await?;
-        println!(
-            "{} {}",
-            "→".blue(),
-            format!("Created native_init: {}", native_init_path.display()).blue()
-        );
+        info!("→ Created native_init: {}", native_init_path.display());
 
         // 5. Generate a random class name for the smali file
         let random_class_name =
@@ -203,11 +169,7 @@ impl Builder {
         let xposed_init_path = assets_dir.join("xposed_init");
         let xposed_init_content = format!("{}.{}", package_name, random_class_name);
         fs::write(&xposed_init_path, &xposed_init_content).await?;
-        println!(
-            "{} {}",
-            "→".blue(),
-            format!("Created xposed_init: {}", xposed_init_path.display()).blue()
-        );
+        info!("→ Created xposed_init: {}", xposed_init_path.display());
 
         // 6. Copy the generated .so file to lib/架构/libxxxx.so within the temporary directory.
 
@@ -215,17 +177,9 @@ impl Builder {
         fs::create_dir_all(&lib_dir).await?;
         let dest_so_path = lib_dir.join(&random_so_name);
         fs::copy(&temp_so_path, &dest_so_path).await?;
-        println!(
-            "{} {}",
-            "→".blue(),
-            format!("Copied .so to: {}", dest_so_path.display()).blue()
-        );
+        info!("→ Copied .so to: {}", dest_so_path.display());
 
-        println!(
-            "{} {}",
-            "✓".green(),
-            format!("Successfully built Xposed module: {}", target_name).green()
-        );
+        info!("✓ Successfully built Xposed module: {}", target_name);
 
         // 7. Create the smali/com/xx/xx/xx/随机类名.smali file
         let smali_dir_path = temp_path.join("smali").join(package_name.replace(".", "/"));
@@ -278,11 +232,7 @@ impl Builder {
         );
 
         fs::write(&smali_file_path, smali_content.as_bytes()).await?;
-        println!(
-            "{} {}",
-            "→".blue(),
-            format!("Created smali file: {}", smali_file_path.display()).blue()
-        );
+        info!("→ Created smali file: {}", smali_file_path.display());
 
         // 8. Copy ic_launcher.webp and ic_launcher_round.webp if specified in the config.
         if let Some(icon_path_str) = &target.icon {
@@ -305,24 +255,15 @@ impl Builder {
             if src_launcher_path.exists() {
                 let dest_launcher_path = res_mipmap_xxhdpi_dir.join(launcher_icon_name);
                 fs::copy(&src_launcher_path, &dest_launcher_path).await?;
-                println!(
-                    "{} {}",
-                    "→".blue(),
-                    format!("Copied launcher icon: {}", dest_launcher_path.display()).blue()
-                );
+                info!("→ Copied launcher icon: {}", dest_launcher_path.display());
             }
 
             if src_launcher_round_path.exists() {
                 let dest_launcher_round_path = res_mipmap_xxhdpi_dir.join(launcher_round_icon_name);
                 fs::copy(&src_launcher_round_path, &dest_launcher_round_path).await?;
-                println!(
-                    "{} {}",
-                    "→".blue(),
-                    format!(
-                        "Copied round launcher icon: {}",
-                        dest_launcher_round_path.display()
-                    )
-                    .blue()
+                info!(
+                    "→ Copied round launcher icon: {}",
+                    dest_launcher_round_path.display()
                 );
             }
         }
@@ -361,11 +302,7 @@ impl Builder {
         );
 
         fs::write(&manifest_path, manifest_content.as_bytes()).await?;
-        println!(
-            "{} {}",
-            "→".blue(),
-            format!("Created AndroidManifest.xml: {}", manifest_path.display()).blue()
-        );
+        info!("→ Created AndroidManifest.xml: {}", manifest_path.display());
 
         // 10. Create apktool.yml with the specified content.
         let apktool_yml_path = temp_path.join("apktool.yml");
@@ -393,14 +330,10 @@ doNotCompress:
 - webp"#;
 
         fs::write(&apktool_yml_path, apktool_yml_content.as_bytes()).await?;
-        println!(
-            "{} {}",
-            "→".blue(),
-            format!("Created apktool.yml: {}", apktool_yml_path.display()).blue()
-        );
+        info!("→ Created apktool.yml: {}", apktool_yml_path.display());
 
         // 11. Build the APK using apktool b.
-        println!("{} {}", "→".blue(), "Building APK with apktool b...".blue());
+        info!("→ Building APK with apktool b...");
         let output = tokio::process::Command::new("apktool")
             .arg("b")
             .arg(temp_path.to_str().unwrap())
@@ -413,15 +346,11 @@ doNotCompress:
                 String::from_utf8_lossy(&output.stderr)
             );
         }
-        println!(
-            "{} {}",
-            "✓".green(),
-            "APK built successfully with apktool b.".green()
-        );
+        info!("✓ APK built successfully with apktool b.");
 
         // 12. Sign the APK using apksigner.
         if sign {
-            println!("{} {}", "→".blue(), "Signing APK with apksigner...".blue());
+            info!("→ Signing APK with apksigner...");
             let unsigned_apk_path = temp_path.join("dist").join("app-debug.apk");
             let signed_apk_path = temp_path
                 .join("dist")
@@ -470,22 +399,14 @@ doNotCompress:
                     String::from_utf8_lossy(&output.stderr)
                 );
             }
-            println!(
-                "{} {}",
-                "✓".green(),
-                "APK signed successfully with apksigner.".green()
-            );
+            info!("✓ APK signed successfully with apksigner.");
 
             // 13. Copy the signed APK back to the desired location.
             let final_apk_name = format!("{}-{}.apk", target_name, platform);
             let final_apk_path = std::path::Path::new(&output_dir).join(&final_apk_name);
             std::fs::create_dir_all(output_dir)?;
             fs::copy(&signed_apk_path, &final_apk_path).await?;
-            println!(
-                "{} {}",
-                "✓".green(),
-                format!("Copied signed APK to: {}", final_apk_path.display()).green()
-            );
+            info!("✓ Copied signed APK to: {}", final_apk_path.display());
         } else {
             // If not signing, just copy the unsigned APK
             let unsigned_apk_path = temp_path.join("dist").join("app-debug.apk");
@@ -493,18 +414,14 @@ doNotCompress:
             let final_apk_path = std::path::Path::new(&output_dir).join(&final_apk_name);
             std::fs::create_dir_all(output_dir)?;
             fs::copy(&unsigned_apk_path, &final_apk_path).await?;
-            println!(
-                "{} {}",
-                "✓".green(),
-                format!("Copied APK to: {}", final_apk_path.display()).green()
-            );
+            info!("✓ Copied APK to: {}", final_apk_path.display());
         }
 
         Ok(())
     }
 
     pub async fn build_all(&mut self) -> Result<()> {
-        println!("{}", "Building all targets...".blue().bold());
+        info!("Building all targets...");
 
         let targets: Vec<(String, ResolvedTarget)> = self
             .config
@@ -517,7 +434,7 @@ doNotCompress:
             self.build_target(&target_name, &target).await?;
         }
 
-        println!("{}", "✓ All targets built successfully!".green().bold());
+        info!("✓ All targets built successfully!");
         Ok(())
     }
 }
