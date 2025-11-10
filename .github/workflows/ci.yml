@@ -34,14 +34,17 @@ jobs:
       run: rustup target add ${{ matrix.target }}
     - name: Build
       run: cargo build --release --target ${{ matrix.target }}
-    - name: Rename binary
+    - name: Rename binary (Unix)
+      if: matrix.os != 'windows-latest'
       run: |
         cd target/${{ matrix.target }}/release/
-        if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          mv fripack.exe ${{ matrix.artifact_name }}
-        else
-          mv fripack ${{ matrix.artifact_name }}
-        fi
+        mv fripack ${{ matrix.artifact_name }}
+    - name: Rename binary (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd target/${{ matrix.target }}/release/
+        Move-Item fripack.exe ${{ matrix.artifact_name }}
+      shell: pwsh
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
