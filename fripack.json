@@ -1,0 +1,23 @@
+{
+    "base": {
+        "version": "1.0.0",
+        "fridaVersion": "17.5.1",
+        "mode": "embedjs",
+        "entry": "main.js",
+        "xz": false
+    },
+    "aa": {
+        "type": "xposed",
+        "platform": "arm64-v8a",
+        "packageName": "com.example.myxposedmodule",
+        "keystore": "C:\\Users\\MicroBlock\\.android\\debug.keystore",
+        "name": "My Xposed Module",
+        "icon": "res\\icon.png",
+    },
+    "bb": {
+        "inherit": "base",
+        "type": "android-so",
+        "platform": "arm64-v8a",
+        "overridePrebuildFile": "./libfripack-inject.so"
+    }
+}
