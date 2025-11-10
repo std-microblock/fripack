@@ -4,8 +4,8 @@
         "fridaVersion": "17.5.1",
         "mode": "embedjs",
         "entry": "main.js",
-        "xz": true,
-        // "overridePrebuildFile": "E:\\fripack\\build\\fripack-inject\\build\\android\\arm64-v8a\\release\\libfripack-inject.so",
+        "xz": false,
+        "overridePrebuildFile": "E:\\fripack\\build\\fripack-inject\\build\\android\\arm64-v8a\\release\\libfripack-inject.so",
         "outputDir": "./fripack",
     },
     "aa": {
@@ -16,7 +16,8 @@
         "keystore": "C:\\Users\\MicroBlock\\.android\\debug.keystore",
         "keystorePass": "android",
         "keystoreAlias": "androiddebugkey",
-        "name": "My Xposed Module"
+        "name": "My Xposed Module",
+        "sign": true
     },
     "bb": {
         "inherit": "base",

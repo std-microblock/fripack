@@ -60,7 +60,7 @@ The following options are available for all target types:
 - `xz` (default: `false`): Compress the script using LZMA.
 - `entry` (required): Entry point script to bundle.
 - `fridaVersion` (required): Frida version to use (must be 17.5.1 or newer).
-- `outputDir` (default: `./`): Output directory for built artifacts.
+- `outputDir` (default: `./fripack`): Output directory for built artifacts.
 - `platform`: Target platform (e.g., `x86_64`, `arm64-v8a`).
 - `version`: Version of your plugin.
 - `type`: Type of the target (defines the output format).

@@ -56,7 +56,7 @@ fripack build xposed
 - `xz` (默认: `false`): 使用 LZMA 压缩脚本。
 - `entry` (必需): 要打包的入口脚本文件。
 - `fridaVersion` (必需): 使用的 Frida 版本（必须为 17.5.1 或更新）。
-- `outputDir` (默认: `./`): 构建产物输出的目录。
+- `outputDir` (默认: `./fripack`): 构建产物输出的目录。
 - `platform`: 目标平台 (例如 `x86_64`, `arm64-v8a`)。
 - `version`: 你的插件版本。
 - `type`: 目标类型（定义了输出格式）。

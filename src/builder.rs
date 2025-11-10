@@ -61,7 +61,7 @@ impl Builder {
             .entry
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing required field: entry"))?;
-        let use_xz = target.xz;
+        let use_xz = target.xz.unwrap_or(false);
 
         // Get prebuilt file data
         let prebuilt_data = if let Some(override_file) = &target.override_prebuild_file {
