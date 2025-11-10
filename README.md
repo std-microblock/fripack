@@ -3,6 +3,8 @@
 
 [中文](./README_zh.md)
 
+<img width="400" alt="image" src="https://github.com/user-attachments/assets/5a00307c-fd30-4991-a82e-2b23f3d115b7" />
+
 Frida is a powerful tool, but its size and the need for root access make it challenging to distribute scripts to end-users. This often limits Frida’s use in developing plugins for wider audiences.
 
 Fripack solves this by packaging your Frida scripts into various executable formats—such as Xposed Modules, Zygisk Modules, shared objects for `LD_PRELOAD`, or injectable DLLs—enabling easy distribution and use of Frida-based plugins.
