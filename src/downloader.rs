@@ -1,21 +1,153 @@
 use anyhow::Result;
 use colored::*;
+use dirs;
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use tokio::fs;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
 pub struct Downloader {
     client: Client,
+    cache_dir: PathBuf,
 }
 
 impl Downloader {
     pub fn new() -> Self {
+        let cache_dir = get_cache_dir();
         Self {
             client: Client::new(),
+            cache_dir,
         }
+    }
+
+    pub fn cache_dir(&self) -> &PathBuf {
+        &self.cache_dir
+    }
+
+    pub async fn ensure_cache_dir(&self) -> Result<()> {
+        if !self.cache_dir.exists() {
+            fs::create_dir_all(&self.cache_dir).await?;
+            println!(
+                "{} {}",
+                "✓".green(),
+                format!("Created cache directory: {}", self.cache_dir.display()).green()
+            );
+        }
+        Ok(())
+    }
+
+    fn get_cache_file_path(&self, platform: &str, frida_version: &str) -> PathBuf {
+        let filename = format!("fripack-inject-{}-{}.so", platform, frida_version);
+        self.cache_dir.join(filename)
+    }
+
+    async fn is_file_cached(&self, platform: &str, frida_version: &str) -> bool {
+        let cache_path = self.get_cache_file_path(platform, frida_version);
+        cache_path.exists()
+    }
+
+    async fn load_cached_file(&self, platform: &str, frida_version: &str) -> Result<Vec<u8>> {
+        let cache_path = self.get_cache_file_path(platform, frida_version);
+        println!(
+            "{} {}",
+            "→".blue(),
+            format!("Loading from cache: {}", cache_path.display()).blue()
+        );
+        Ok(fs::read(&cache_path).await?)
+    }
+
+    async fn save_to_cache(&self, platform: &str, frida_version: &str, data: &[u8]) -> Result<()> {
+        self.ensure_cache_dir().await?;
+        let cache_path = self.get_cache_file_path(platform, frida_version);
+        fs::write(&cache_path, data).await?;
+        println!(
+            "{} {}",
+            "→".blue(),
+            format!("Cached to: {}", cache_path.display()).blue()
+        );
+        Ok(())
+    }
+
+    pub async fn list_cached_files(&self) -> Result<Vec<PathBuf>> {
+        if !self.cache_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut entries = fs::read_dir(&self.cache_dir).await?;
+        let mut files = Vec::new();
+
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.is_file() && path.extension().map_or(false, |ext| ext == "so") {
+                files.push(path);
+            }
+        }
+
+        Ok(files)
+    }
+
+    pub async fn clear_cache(&self) -> Result<usize> {
+        if !self.cache_dir.exists() {
+            println!("{}", "Cache directory does not exist.".yellow());
+            return Ok(0);
+        }
+
+        let files = self.list_cached_files().await?;
+        let mut count = 0;
+
+        for file in &files {
+            fs::remove_file(file).await?;
+            count += 1;
+        }
+
+        if count > 0 {
+            println!(
+                "{} {}",
+                "✓".green(),
+                format!("Removed {} cached files", count).green()
+            );
+        } else {
+            println!("{}", "No cached files to remove.".yellow());
+        }
+
+        Ok(count)
+    }
+
+    pub async fn get_cache_stats(&self) -> Result<CacheStats> {
+        if !self.cache_dir.exists() {
+            return Ok(CacheStats {
+                file_count: 0,
+                total_size: 0,
+                files: Vec::new(),
+            });
+        }
+
+        let files = self.list_cached_files().await?;
+        let mut total_size = 0u64;
+        let mut file_info = Vec::new();
+
+        for file in &files {
+            let metadata = fs::metadata(file).await?;
+            let size = metadata.len();
+            total_size += size;
+
+            if let Some(filename) = file.file_name().and_then(|n| n.to_str()) {
+                file_info.push(CachedFileInfo {
+                    name: filename.to_string(),
+                    size,
+                    path: file.clone(),
+                });
+            }
+        }
+
+        Ok(CacheStats {
+            file_count: files.len(),
+            total_size,
+            files: file_info,
+        })
     }
 
     pub async fn download_prebuilt_file(
@@ -23,10 +155,12 @@ impl Downloader {
         platform: &str,
         frida_version: &str,
     ) -> Result<Vec<u8>> {
-        // First, get the list of files from the release
+        if self.is_file_cached(platform, frida_version).await {
+            return self.load_cached_file(platform, frida_version).await;
+        }
+
         let files = self.get_release_files(frida_version).await?;
 
-        // Find the best matching file based on platform and version
         let matched_file = self.find_matching_file(&files, platform, frida_version)?;
 
         let url = matched_file.download_url;
@@ -69,6 +203,8 @@ impl Downloader {
         }
 
         pb.finish_with_message("Download complete!");
+
+        self.save_to_cache(platform, frida_version, &data).await?;
 
         Ok(data)
     }
@@ -141,12 +277,11 @@ impl Downloader {
             }
         }
 
-        versions.sort_by(|a, b| b.cmp(a)); // Sort in descending order
+        versions.sort_by(|a, b| b.cmp(a));
 
         Ok(versions)
     }
 
-    /// Get the list of files for a specific release
     pub async fn get_release_files(&self, frida_version: &str) -> Result<Vec<ReleaseAsset>> {
         let url = format!(
             "https://api.github.com/repos/FriRebuild/fripack-inject/releases/tags/{}",
@@ -189,14 +324,12 @@ impl Downloader {
         Ok(files)
     }
 
-    /// Find the best matching file based on platform and version keywords
     fn find_matching_file(
         &self,
         files: &[ReleaseAsset],
         platform: &str,
         frida_version: &str,
     ) -> Result<ReleaseAsset> {
-        // Platform mapping for better matching
         let platform_mappings = std::collections::HashMap::from([
             ("arm64-v8a", vec!["android-arm64", "arm64"]),
             ("armeabi-v7a", vec!["android-arm", "arm"]),
@@ -210,12 +343,10 @@ impl Downloader {
             .unwrap_or(&vec![platform])
             .clone();
 
-        // First try to find exact matches with version
         for file in files {
             let filename = file.name.to_lowercase();
             let version_lower = frida_version.to_lowercase();
 
-            // Check if file contains version and platform keywords
             if filename.contains(&version_lower) {
                 for keyword in &platform_keywords {
                     if filename.contains(&keyword.to_lowercase()) {
@@ -225,7 +356,6 @@ impl Downloader {
             }
         }
 
-        // If no exact match, try platform-only matching
         for file in files {
             let filename = file.name.to_lowercase();
 
@@ -245,7 +375,6 @@ impl Downloader {
             }
         }
 
-        // If still no match, try to find any .so file as fallback
         for file in files {
             if file.name.ends_with(".so") {
                 println!(
@@ -279,4 +408,23 @@ impl Default for Downloader {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn get_cache_dir() -> PathBuf {
+    let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    home_dir.join(".fripack")
+}
+
+#[derive(Debug, Clone)]
+pub struct CacheStats {
+    pub file_count: usize,
+    pub total_size: u64,
+    pub files: Vec<CachedFileInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedFileInfo {
+    pub name: String,
+    pub size: u64,
+    pub path: PathBuf,
 }

@@ -10,6 +10,7 @@ mod downloader;
 
 use builder::Builder;
 use config::FripackConfig;
+use downloader::{CacheStats, Downloader};
 
 #[derive(Parser)]
 #[command(name = "fripack")]
@@ -33,6 +34,19 @@ enum Commands {
         /// Specific target to build (optional, builds all if not specified)
         target: Option<String>,
     },
+    /// Cache management commands
+    Cache {
+        #[command(subcommand)]
+        action: CacheAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum CacheAction {
+    /// Show cache statistics and list cached files
+    Query,
+    /// Clear all cached files
+    Clear,
 }
 
 #[tokio::main]
@@ -47,6 +61,9 @@ async fn main() -> Result<()> {
         }
         Commands::Build { target } => {
             build_target(target).await?;
+        }
+        Commands::Cache { action } => {
+            handle_cache_action(action).await?;
         }
     }
 
@@ -84,7 +101,6 @@ async fn init_config(path: PathBuf) -> Result<()> {
 async fn build_target(target: Option<String>) -> Result<()> {
     println!("{}", "Building fripack targets...".green().bold());
 
-    // Find the nearest configuration file
     let config_path = find_config_file(std::env::current_dir()?)?;
     println!(
         "{} {}",
@@ -92,20 +108,16 @@ async fn build_target(target: Option<String>) -> Result<()> {
         format!("Using configuration: {}", config_path.display()).blue()
     );
 
-    // Change working directory to config file location
     let config_dir = config_path.parent().unwrap_or(&std::path::Path::new("."));
     std::env::set_current_dir(config_dir)?;
 
-    // Load and parse configuration
     let config_content = tokio::fs::read_to_string(&config_path).await?;
     let config: FripackConfig = json5::from_str(&config_content)?;
 
-    // Resolve inheritance
     let resolved_config = config.resolve_inheritance()?;
 
     match target {
         Some(target_name) => {
-            // Build specific target
             let target_config = resolved_config
                 .targets
                 .get(&target_name)
@@ -124,7 +136,6 @@ async fn build_target(target: Option<String>) -> Result<()> {
             );
         }
         None => {
-            // Build all targets
             println!("{}", "Building all targets...".blue());
             let mut builder = Builder::new(&resolved_config);
 
@@ -169,4 +180,106 @@ fn find_config_file(start_dir: PathBuf) -> Result<PathBuf> {
         }
     }
     anyhow::bail!("Could not find fripack configuration file in current or parent directories");
+}
+
+async fn handle_cache_action(action: CacheAction) -> Result<()> {
+    let downloader = Downloader::new();
+
+    match action {
+        CacheAction::Query => {
+            query_cache(&downloader).await?;
+        }
+        CacheAction::Clear => {
+            clear_cache(&downloader).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn query_cache(downloader: &Downloader) -> Result<()> {
+    println!("{}", "Cache Information".green().bold());
+    println!("{}", "================".green());
+
+    let cache_dir = downloader.cache_dir();
+    println!("{} {}", "Cache Directory:".blue(), cache_dir.display());
+
+    let stats = downloader.get_cache_stats().await?;
+
+    if stats.file_count == 0 {
+        println!("{}", "No cached files found.".yellow());
+        return Ok(());
+    }
+
+    println!("{} {}", "Total Files:".blue(), stats.file_count);
+    println!(
+        "{} {}",
+        "Total Size:".blue(),
+        format_bytes(stats.total_size)
+    );
+
+    println!("\n{}", "Cached Files:".green().bold());
+    println!("{}", "------------".green());
+
+    for file_info in stats.files {
+        println!(
+            "  {} {} ({})",
+            "•".blue(),
+            file_info.name,
+            format_bytes(file_info.size)
+        );
+    }
+
+    Ok(())
+}
+
+async fn clear_cache(downloader: &Downloader) -> Result<()> {
+    println!("{}", "Clearing Cache".red().bold());
+    println!("{}", "==============".red());
+
+    let stats = downloader.get_cache_stats().await?;
+
+    if stats.file_count == 0 {
+        println!("{}", "No cached files to clear.".yellow());
+        return Ok(());
+    }
+
+    println!(
+        "{} {}",
+        "Found:".yellow(),
+        format!(
+            "{} files ({} total)",
+            stats.file_count,
+            format_bytes(stats.total_size)
+        )
+    );
+
+    let removed_count = downloader.clear_cache().await?;
+
+    if removed_count > 0 {
+        println!(
+            "{} {}",
+            "✓".green(),
+            format!("Successfully removed {} cached files", removed_count).green()
+        );
+    }
+
+    Ok(())
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB"];
+    let mut size = bytes as f64;
+    let mut unit_index = 0;
+
+    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit_index += 1;
+    }
+
+    if unit_index == 0 {
+        format!("{} {}", bytes, UNITS[unit_index])
+    } else {
+        format!("{:.2} {}", size, UNITS[unit_index])
+    }
 }

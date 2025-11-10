@@ -196,7 +196,7 @@ impl Builder {
             format!("Created native_init: {}", native_init_path.display()).blue()
         );
 
-        // 6. Generate a random class name for the smali file
+        // 5. Generate a random class name for the smali file
         let random_class_name =
             format!("{}{}", generate_random_string(4), generate_random_string(4)); // e.g., "abcdABCD"
 
@@ -209,7 +209,7 @@ impl Builder {
             format!("Created xposed_init: {}", xposed_init_path.display()).blue()
         );
 
-        // 5. Copy the generated .so file to lib/架构/libxxxx.so within the temporary directory.
+        // 6. Copy the generated .so file to lib/架构/libxxxx.so within the temporary directory.
 
         let lib_dir = temp_path.join("lib").join(platform);
         fs::create_dir_all(&lib_dir).await?;
