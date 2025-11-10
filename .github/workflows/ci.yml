@@ -13,18 +13,40 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: fripack-x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: fripack-x86_64-pc-windows-msvc.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: fripack-x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: fripack-aarch64-apple-darwin
     steps:
     - uses: actions/checkout@v4
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
+    - name: Add target
+      run: rustup target add ${{ matrix.target }}
     - name: Build
-      run: cargo build --release
+      run: cargo build --release --target ${{ matrix.target }}
+    - name: Rename binary
+      run: |
+        cd target/${{ matrix.target }}/release/
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          mv fripack.exe ${{ matrix.artifact_name }}
+        else
+          mv fripack ${{ matrix.artifact_name }}
+        fi
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: fripack-${{ matrix.os }}
-        path: target/release/fripack${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+        name: ${{ matrix.artifact_name }}
+        path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
 
   release:
     needs: build
@@ -36,12 +58,15 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         path: artifacts
+    - name: List artifacts
+      run: find artifacts -type f
     - name: Upload binaries to release
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          artifacts/fripack-ubuntu-latest/fripack
-          artifacts/fripack-windows-latest/fripack.exe
-          artifacts/fripack-macos-latest/fripack
+          artifacts/fripack-x86_64-unknown-linux-gnu/fripack-x86_64-unknown-linux-gnu
+          artifacts/fripack-x86_64-pc-windows-msvc.exe/fripack-x86_64-pc-windows-msvc.exe
+          artifacts/fripack-x86_64-apple-darwin/fripack-x86_64-apple-darwin
+          artifacts/fripack-aarch64-apple-darwin/fripack-aarch64-apple-darwin
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
