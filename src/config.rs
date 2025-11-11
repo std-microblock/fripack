@@ -131,7 +131,7 @@ impl FripackConfig {
         }
 
         if processing.contains(name) {
-            anyhow::bail!("Cyclic inheritance detected for target: {}", name);
+            anyhow::bail!("Cyclic inheritance detected for target: {name}");
         }
 
         processing.insert(name.to_string());
@@ -146,7 +146,7 @@ impl FripackConfig {
                     resolved = parent_resolved.clone();
                 }
             } else {
-                anyhow::bail!("Target not found: {}", inherit_name);
+                anyhow::bail!("Target not found: {inherit_name}");
             }
         }
 
@@ -204,7 +204,6 @@ pub enum Arch {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Platform {
-    Unknown,
     Android,
     Windows,
     Linux,
@@ -241,7 +240,7 @@ impl PlatformConfig {
             ["x86_64", "android"] => (Arch::X86_64, Platform::Android),
             ["x86_64", "windows"] => (Arch::X86_64, Platform::Windows),
             ["x86_64", "linux"] => (Arch::X86_64, Platform::Linux),
-            _ => anyhow::bail!("Unsupported platform description: {}", platform_desc),
+            _ => anyhow::bail!("Unsupported platform description: {platform_desc}"),
         };
         Ok(PlatformConfig { arch, platform })
     }
@@ -270,7 +269,6 @@ impl PlatformConfig {
             Platform::Windows => Ok("windows".to_string()),
             Platform::Linux => Ok("linux".to_string()),
             Platform::MacOS => Ok("macos".to_string()),
-            Platform::Unknown => Ok("unknown".to_string()),
         }
     }
 }

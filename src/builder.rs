@@ -1,11 +1,10 @@
-use crate::binary::{BinaryProcessor, EmbeddedConfig};
+use crate::binary::BinaryProcessor;
 use crate::config::{ResolvedConfig, ResolvedTarget};
 use crate::downloader::Downloader;
 use anyhow::Result;
 use log::{info, warn};
 use rand::Rng;
 use std::path::{Path, PathBuf};
-use tempfile;
 use tokio::{fs, process::Command};
 
 pub struct Builder {
@@ -36,11 +35,10 @@ impl Builder {
         match target.target_type.as_deref() {
             Some("android-so") => self.build_android_so(target_name, target).await,
             Some("xposed") => self.build_xposed(target_name, target).await,
-            Some(other) => anyhow::bail!("Unsupported target type: {}", other),
+            Some(other) => anyhow::bail!("Unsupported target type: {other}"),
             None => {
                 warn!(
-                    "Target type not specified for target: {}, skipping...",
-                    target_name
+                    "Target type not specified for target: {target_name}, skipping..."
                 );
                 Ok(())
             }
@@ -65,17 +63,17 @@ impl Builder {
 
         // Get prebuilt file data
         let prebuilt_data = if let Some(override_file) = &target.override_prebuild_file {
-            info!("→ Using override prebuilt file: {}", override_file);
+            info!("→ Using override prebuilt file: {override_file}");
             fs::read(override_file).await?
         } else {
-            info!("→ Downloading prebuilt file for platform: {:?}", platform);
+            info!("→ Downloading prebuilt file for platform: {platform:?}");
             self.downloader
                 .download_prebuilt_file(platform, frida_version)
                 .await?
         };
 
         // Read entry file
-        info!("→ Reading entry file: {}", entry);
+        info!("→ Reading entry file: {entry}");
         let entry_data = fs::read(entry).await?;
 
         // Process the binary
@@ -101,7 +99,7 @@ impl Builder {
     }
 
     async fn build_android_so(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<()> {
-        info!("→ Building Android SO target: {}", target_name);
+        info!("→ Building Android SO target: {target_name}");
 
         let output_dir = target.output_dir.as_deref().unwrap_or("./fripack");
 
@@ -110,7 +108,7 @@ impl Builder {
             .platform
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing required field: platform"))?;
-        let output_filename = format!("{}-{}.so", target_name, platform);
+        let output_filename = format!("{target_name}-{platform}.so");
         let output_file_path = std::path::Path::new(output_dir).join(&output_filename);
         std::fs::create_dir_all(output_dir)?;
         fs::write(&output_file_path, output_data).await?;
@@ -124,7 +122,7 @@ impl Builder {
     }
 
     async fn build_xposed(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<()> {
-        info!("→ Building Xposed target: {}", target_name);
+        info!("→ Building Xposed target: {target_name}");
 
         // Get required fields
         let platform = target
@@ -167,7 +165,7 @@ impl Builder {
             format!("{}{}", generate_random_string(4), generate_random_string(4)); // e.g., "abcdABCD"
 
         let xposed_init_path = assets_dir.join("xposed_init");
-        let xposed_init_content = format!("{}.{}", package_name, random_class_name);
+        let xposed_init_content = format!("{package_name}.{random_class_name}");
         fs::write(&xposed_init_path, &xposed_init_content).await?;
         info!("→ Created xposed_init: {}", xposed_init_path.display());
 
@@ -179,13 +177,13 @@ impl Builder {
         fs::copy(&temp_so_path, &dest_so_path).await?;
         info!("→ Copied .so to: {}", dest_so_path.display());
 
-        info!("✓ Successfully built Xposed module: {}", target_name);
+        info!("✓ Successfully built Xposed module: {target_name}");
 
         // 7. Create the smali/com/xx/xx/xx/随机类名.smali file
         let smali_dir_path = temp_path.join("smali").join(package_name.replace(".", "/"));
         fs::create_dir_all(&smali_dir_path).await?;
 
-        let smali_file_path = smali_dir_path.join(format!("{}.smali", random_class_name));
+        let smali_file_path = smali_dir_path.join(format!("{random_class_name}.smali"));
 
         let smali_content = format!(
             r#".class public L{}/{};
@@ -289,16 +287,15 @@ impl Builder {
 
         let manifest_content = format!(
             r#"<?xml version="1.0" encoding="utf-8" standalone="no"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" android:compileSdkVersion="36" android:compileSdkVersionCodename="16" package="{}" platformBuildVersionCode="36" platformBuildVersionName="16">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" android:compileSdkVersion="36" android:compileSdkVersionCodename="16" package="{package_name}" platformBuildVersionCode="36" platformBuildVersionName="16">
     <application android:debuggable="true" android:extractNativeLibs="true"
-                {} android:label="{}">
+                {icon_attributes} android:label="{name}">
         <meta-data android:name="xposedmodule" android:value="true"/>
-        <meta-data android:name="xposeddescription" android:value="{}"/>
+        <meta-data android:name="xposeddescription" android:value="{xposed_description}"/>
         <meta-data android:name="xposedminversion" android:value="53"/>
-        <meta-data android:name="xposedscope" android:value="{}"/>
+        <meta-data android:name="xposedscope" android:value="{xposed_scope}"/>
     </application>
-</manifest>"#,
-            package_name, icon_attributes, name, xposed_description, xposed_scope
+</manifest>"#
         );
 
         fs::write(&manifest_path, manifest_content.as_bytes()).await?;
@@ -354,7 +351,7 @@ doNotCompress:
             let unsigned_apk_path = temp_path.join("dist").join("app-debug.apk");
             let signed_apk_path = temp_path
                 .join("dist")
-                .join(format!("{}-{}-signed.apk", target_name, platform));
+                .join(format!("{target_name}-{platform}-signed.apk"));
 
             let keystore = target
                 .keystore
@@ -384,7 +381,7 @@ doNotCompress:
                 .arg("--ks-key-alias")
                 .arg(keystore_alias)
                 .arg("--ks-pass")
-                .arg(format!("pass:{}", keystore_pass));
+                .arg(format!("pass:{keystore_pass}"));
 
             let output = command
                 .arg("--out")
@@ -402,7 +399,7 @@ doNotCompress:
             info!("✓ APK signed successfully with apksigner.");
 
             // 13. Copy the signed APK back to the desired location.
-            let final_apk_name = format!("{}-{}.apk", target_name, platform);
+            let final_apk_name = format!("{target_name}-{platform}.apk");
             let final_apk_path = std::path::Path::new(&output_dir).join(&final_apk_name);
             std::fs::create_dir_all(output_dir)?;
             fs::copy(&signed_apk_path, &final_apk_path).await?;
@@ -410,7 +407,7 @@ doNotCompress:
         } else {
             // If not signing, just copy the unsigned APK
             let unsigned_apk_path = temp_path.join("dist").join("app-debug.apk");
-            let final_apk_name = format!("{}-{}.apk", target_name, platform);
+            let final_apk_name = format!("{target_name}-{platform}.apk");
             let final_apk_path = std::path::Path::new(&output_dir).join(&final_apk_name);
             std::fs::create_dir_all(output_dir)?;
             fs::copy(&unsigned_apk_path, &final_apk_path).await?;

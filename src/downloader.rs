@@ -1,13 +1,10 @@
 use anyhow::Result;
-use dirs;
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{info, warn};
 use reqwest::Client;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::fs;
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
 
 use crate::config::{Platform, PlatformConfig};
 
@@ -80,7 +77,7 @@ impl Downloader {
 
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
-            if path.is_file() && path.extension().map_or(false, |ext| ext == "so") {
+            if path.is_file() && path.extension().is_some_and(|ext| ext == "so") {
                 files.push(path);
             }
         }
@@ -103,7 +100,7 @@ impl Downloader {
         }
 
         if count > 0 {
-            info!("✓ Removed {} cached files", count);
+            info!("✓ Removed {count} cached files");
         } else {
             warn!("No cached files to remove.");
         }
@@ -182,7 +179,7 @@ impl Downloader {
         let url = self.get_prebuilt_file_url(platform, frida_version);
         let filename = self.get_prebuilt_file_name(platform, frida_version);
 
-        info!("→ Downloading prebuilt file: {}", filename);
+        info!("→ Downloading prebuilt file: {filename}");
 
         let response = self.client.get(&url).send().await?;
 
@@ -220,12 +217,6 @@ impl Downloader {
 
         Ok(data)
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct ReleaseAsset {
-    pub name: String,
-    pub download_url: String,
 }
 
 impl Default for Downloader {

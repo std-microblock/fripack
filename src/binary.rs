@@ -1,10 +1,6 @@
 use anyhow::{Context, Result};
 use log::info;
-use object::{
-    build::ByteString,
-    elf::{PF_R, PF_W, PT_NOTE, PT_PHDR},
-};
-use object_rewrite::Rewriter;
+use object::elf::{PF_R, PF_W, PT_PHDR};
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct EmbeddedConfig {
@@ -72,17 +68,10 @@ impl BinaryProcessor {
         let magic1_bytes = (0x0d000721i32).to_le_bytes();
         let magic2_bytes = (0x1f8a4e2bi32).to_le_bytes();
 
-        for i in 0..self
+        (0..self
             .data
             .len()
-            .saturating_sub(std::mem::size_of::<EmbeddedConfig>())
-        {
-            if self.data[i..i + 4] == magic1_bytes && self.data[i + 4..i + 8] == magic2_bytes {
-                return Some(i);
-            }
-        }
-
-        None
+            .saturating_sub(std::mem::size_of::<EmbeddedConfig>())).find(|&i| self.data[i..i + 4] == magic1_bytes && self.data[i + 4..i + 8] == magic2_bytes)
     }
 
     pub fn add_embedded_config_data(&mut self, config_data: &[u8], use_xz: bool) -> Result<()> {
@@ -109,7 +98,7 @@ impl BinaryProcessor {
 
         
         let vaddr_spare_area = (vaddr_spare_area + 0xfff) & !0xfff;
-        info!("vaddr_spare_area: {:#x}", vaddr_spare_area);
+        info!("vaddr_spare_area: {vaddr_spare_area:#x}");
 
         let mut offset_spare_area = self.data.len() as u64;
 
@@ -178,7 +167,7 @@ impl BinaryProcessor {
         self.data = vec![];
         elf.write(&mut self.data)?;
         let data_cloned = self.data.clone();
-        let mut elf = object::build::elf::Builder::read(data_cloned.as_slice())?;
+        let elf = object::build::elf::Builder::read(data_cloned.as_slice())?;
         // update embedded config offset
         let embedded_config_offset = self
             .find_embedded_config()
@@ -197,17 +186,14 @@ impl BinaryProcessor {
             .segments
             .iter()
             .find(|seg| {
-                seg.sections
-                    .iter()
-                    .any(|sec| *sec == fripack_section_id)
+                seg.sections.contains(&fripack_section_id)
             })
             .context("Failed to find fripack_config segment")?;
 
-        embedded_config.data_offset = ((fripack_section_segment.p_offset as i32
+        embedded_config.data_offset = (fripack_section_segment.p_offset as i32
             - embedded_config_offset as i32)
             - (fripack_section_segment.p_offset as i32 - data_section_segment.p_offset as i32)
-            + (fripack_section_segment.p_vaddr as i32 - data_section_segment.p_vaddr as i32))
-            as i32;
+            + (fripack_section_segment.p_vaddr as i32 - data_section_segment.p_vaddr as i32);
         let embedded_config_bytes = embedded_config.as_bytes();
         self.data[embedded_config_offset..embedded_config_offset + embedded_config_bytes.len()]
             .copy_from_slice(&embedded_config_bytes);

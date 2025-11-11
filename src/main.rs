@@ -10,7 +10,7 @@ mod downloader;
 
 use builder::Builder;
 use config::FripackConfig;
-use downloader::{CacheStats, Downloader};
+use downloader::Downloader;
 
 #[derive(Parser)]
 #[command(name = "fripack")]
@@ -109,7 +109,7 @@ async fn build_target(target: Option<String>) -> Result<()> {
         config_path.display()
     );
 
-    let config_dir = config_path.parent().unwrap_or(&std::path::Path::new("."));
+    let config_dir = config_path.parent().unwrap_or(std::path::Path::new("."));
     std::env::set_current_dir(config_dir)?;
 
     let config_content = tokio::fs::read_to_string(&config_path).await?;
@@ -124,31 +124,19 @@ async fn build_target(target: Option<String>) -> Result<()> {
                 .get(&target_name)
                 .context("Failed to find the target")?;
             info!(
-                "→ Building target: {}",
-                target_name
+                "→ Building target: {target_name}"
             );
             let mut builder = Builder::new(&resolved_config);
             builder.build_target(&target_name, target_config).await?;
             info!(
-                "✓ Successfully built target: {}",
-                target_name
+                "✓ Successfully built target: {target_name}"
             );
         }
         None => {
             info!("Building all targets...");
             let mut builder = Builder::new(&resolved_config);
-
-            for (target_name, target_config) in &resolved_config.targets {
-                info!(
-                    "→ Building target: {}",
-                    target_name
-                );
-                builder.build_target(target_name, target_config).await?;
-                info!(
-                    "✓ Successfully built target: {}",
-                    target_name
-                );
-            }
+            builder.build_all().await?;
+            info!("✓ Successfully built all targets!");
         }
     }
 
@@ -249,8 +237,7 @@ async fn clear_cache(downloader: &Downloader) -> Result<()> {
 
     if removed_count > 0 {
         info!(
-            "✓ Successfully removed {} cached files",
-            removed_count
+            "✓ Successfully removed {removed_count} cached files"
         );
     }
 
