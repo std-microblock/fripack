@@ -72,7 +72,7 @@ Example using inheritance to avoid repetition:
         "entry": "main.js",
         "xz": true,
         "outputDir": "./fripack",
-        "platform": "arm64-v8a"
+        "platform": "android-arm64"
     },
     "xposed": {
         "inherit": "base",
@@ -111,7 +111,6 @@ Builds your Frida script into an Xposed Module. Only supports `Android` platform
 - `name` (required): Display name of the module.
 - `scope` (optional): Suggested target scope for the module.
 - `description` (optional): Description of the module.
-- `
 
 #### `shared`
 

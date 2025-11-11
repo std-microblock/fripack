@@ -1,5 +1,9 @@
-# Fripack  
+# Fripack
 ### 将你的 Frida 脚本打包成可执行文件。
+
+[English](./README.md)
+
+<img width="400" alt="image" src="https://github.com/user-attachments/assets/5a00307c-fd30-4991-a82e-2b23f3d115b7" />
 
 Frida 是一个强大的工具，但其体积较大且通常需要 root 权限，这使得将脚本分发给最终用户变得困难。这常常限制了 Frida 在开发面向更广泛用户的插件中的应用。
 
@@ -23,13 +27,8 @@ Fripack 使用一个名为 `fripack.json` 的配置文件，该文件支持 JSON
         "version": "1.0.0",
         "fridaVersion": "17.5.1",
         "entry": "main.js",
-        "xz": true,
-        "outputDir": "./fripack",
-        "platform": "arm64-v8a",
+        "platform": "android-arm64",
         "packageName": "com.example.myxposedmodule",
-        "keystore": "./.android/debug.keystore",
-        "keystorePass": "android",
-        "keystoreAlias": "androiddebugkey",
         "name": "我的 Xposed 模块"
     }
 }
@@ -57,7 +56,8 @@ fripack build xposed
 - `entry` (必需): 要打包的入口脚本文件。
 - `fridaVersion` (必需): 使用的 Frida 版本（必须为 17.5.1 或更新）。
 - `outputDir` (默认: `./fripack`): 构建产物输出的目录。
-- `platform`: 目标平台 (例如 `x86_64`, `arm64-v8a`)。
+- `platform`: 目标平台 (例如 `android-arm64`, `windows-x86_64`)。
+  - 有效值: `android-arm32`, `android-arm64`, `android-x86`, `android-x64`, `windows-x64`, `linux-x64`
 - `version`: 你的插件版本。
 - `type`: 目标类型（定义了输出格式）。
 - `inherit`: 要继承配置的另一个目标的键名。
@@ -72,7 +72,7 @@ fripack build xposed
         "entry": "main.js",
         "xz": true,
         "outputDir": "./fripack",
-        "platform": "arm64-v8a"
+        "platform": "android-arm64"
     },
     "xposed": {
         "inherit": "base",
@@ -85,7 +85,7 @@ fripack build xposed
     },
     "raw-so": {
         "inherit": "base",
-        "type": "android-so"
+        "type": "shared"
     }
 }
 ```
@@ -112,11 +112,31 @@ fripack build xposed
 - `scope` (可选): 模块建议的作用范围。
 - `description` (可选): 模块描述。
 
-#### `android-so`
+#### `shared`
 
-将你的 Frida 脚本构建成一个共享对象文件 (`.so`)，可以通过多种方式加载（例如 `LD_PRELOAD`）。
+将你的 Frida 脚本构建成一个共享库 (`.so` / `.dll`)，可以通过多种方式加载（例如 `LD_PRELOAD`）。
 
 ---
+
+## 注意事项
+### 如何查看日志？
+在 Android 上，日志通过 Android 日志系统输出，标签为 `FriPackInject`。你可以使用 adb 查看它们：
+```bash
+adb logcat FriPackInject:D *:S
+```
+
+在 Windows 上，日志会同时写入 `stdout` 和 Windows 调试日志。要查看它们，你可以：
+- 将调试器附加到目标应用程序
+- 在 Frida 脚本中使用 `AllocConsole` 和 `freopen`
+- 在控制台中启动目标应用程序
+- 使用 [DebugView](https://learn.microsoft.com/en-us/sysinternals/downloads/debugview) 监控全局系统日志
+
+在其他平台上，日志会定向到 `stdout`。
+
+### `ReferenceError: 'Java' is not defined`
+从 Frida 17.0.0 开始，`frida-java-bridge` 不再与 Frida 的 GumJS 运行时捆绑在一起。这意味着用户现在必须明确引入他们想要使用的 bridge。
+
+在打包之前，你必须安装 `frida-java-bridge` 并通过 `frida-compile` 构建脚本。查看 https://frida.re/docs/bridges/ 了解更多详情。
 
 ## 致谢
 
