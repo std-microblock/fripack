@@ -122,6 +122,7 @@ Only targets with a `type` field will be built.
 #### `xposed`
 
 Builds your Frida script into an Xposed Module. Only supports `Android` platforms.
+
 **Requires:** [`apktool`](https://apktool.org/) installed on your system.
 
 **Additional options:**
@@ -144,6 +145,7 @@ Builds your Frida script into a shared library (`.so` / `.dll`) that can be load
 #### `inject-apk`
 
 Injects your Frida script into an existing APK by modifying one of its native libraries. Only supports `Android` platforms.
+
 **Requires:** [`apktool`](https://apktool.org/) installed on your system.
 
 It's also recommended to have [`zipalign`](https://developer.android.com/tools/zipalign) in your path.

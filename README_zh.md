@@ -124,7 +124,8 @@ fripack build xposed
 #### `xposed`
 
 将你的 Frida 脚本构建成一个 Xposed 模块。
-**要求：** 系统中已安装 [`apktool`](https://apktool.org/)。
+
+**要求：** 需安装 [`apktool`](https://apktool.org/)。
 
 **额外选项：**
 
@@ -146,9 +147,10 @@ fripack build xposed
 #### `inject-apk`
 
 通过修改现有 APK 的原生库来将你的 Frida 脚本注入其中。仅支持 `Android` 平台。
-**要求：** 系统中已安装 [`apktool`](https://apktool.org/)。
 
-还建议在路径中包含 [`zipalign`](https://developer.android.com/tools/zipalign)。
+**要求：** 需安装 [`apktool`](https://apktool.org/)。
+
+还建议安装 [`zipalign`](https://developer.android.com/tools/zipalign)。
 
 **额外选项：**
 
