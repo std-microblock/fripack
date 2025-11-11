@@ -1,11 +1,7 @@
 use anyhow::{Context, Result};
 use log::info;
 use object::{
-    elf::{PF_R, PF_W, PT_PHDR},
-    pe,
-    read::coff::CoffHeader,
-    read::pe::{ImageNtHeaders, ImageOptionalHeader},
-    LittleEndian as LE,
+    LittleEndian as LE, elf::{PF_R, PF_W, PT_LOAD, PT_PHDR}, pe, read::{coff::CoffHeader, pe::{ImageNtHeaders, ImageOptionalHeader}}
 };
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
@@ -154,33 +150,26 @@ impl BinaryProcessor {
                 }
 
                 let size = elf.program_headers_size() as u64;
-                let (phdr_segment_offset, phdr_segment_size_diff) = {
-                    let phdr_segment = elf
-                        .segments
-                        .iter_mut()
-                        .find(|seg| seg.p_type == PT_PHDR)
-                        .context("Failed to find PT_PHDR segment")?;
 
-                    // update PT_PHDR segment size
+                let size_diff = if let Some(phdr_segment) =
+                    elf.segments.iter_mut().find(|seg| seg.p_type == PT_PHDR)
+                {
                     let size_diff = size - phdr_segment.p_filesz;
                     phdr_segment.p_filesz = size;
                     phdr_segment.p_memsz = size;
-                    (phdr_segment.p_offset, size_diff)
+                    size_diff
+                } else {
+                    size
                 };
 
-                // resize the PT_LOAD segment that covered PT_PHDR segment to include the new size
-                let seg = &mut elf.segments;
-                let segment_that_covers_phdr = seg
+                let header_load_segment = elf
+                    .segments
                     .iter_mut()
-                    .find(|seg| {
-                        seg.p_type == object::elf::PT_LOAD
-                            && seg.p_offset <= phdr_segment_offset
-                            && phdr_segment_offset < seg.p_offset + seg.p_filesz
-                    })
-                    .context("Failed to find PT_LOAD segment that covers PT_PHDR")?;
+                    .find(|seg| seg.p_type == PT_LOAD && seg.p_offset == 0)
+                    .context("Failed to find PT_LOAD segment covering header (p_offset == 0)")?;
 
-                segment_that_covers_phdr.p_filesz += phdr_segment_size_diff;
-                segment_that_covers_phdr.p_memsz += phdr_segment_size_diff;
+                header_load_segment.p_filesz += size_diff;
+                header_load_segment.p_memsz += size_diff;
 
                 self.data = vec![];
                 elf.write(&mut self.data)?;
