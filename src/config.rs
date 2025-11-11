@@ -165,7 +165,6 @@ pub struct ResolvedConfig {
     pub targets: HashMap<String, ResolvedTarget>,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TargetConfig {
     pub inherit: Option<String>,
@@ -196,11 +195,90 @@ pub struct TargetConfig {
     pub output_dir: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Arch {
+    Arm32,
+    Arm64,
+    X86,
+    X86_64,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Platform {
+    Unknown,
+    Android,
+    Windows,
+    Linux,
+    MacOS,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlatformConfig {
+    pub arch: Arch,
+    pub platform: Platform,
+}
+
+impl std::fmt::Display for PlatformConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}-{}",
+            self.platform_str().unwrap(),
+            self.frida_arch().unwrap(),
+        )
+    }
+}
+
+impl PlatformConfig {
+    pub fn from_str(platform_desc: String) -> Result<Self> {
+        let mut parts: Vec<&str> = platform_desc.split('-').collect();
+        if parts[0] == "x64" {
+            parts[0] = "x86_64";
+        }
+        let (arch, platform) = match parts.as_slice() {
+            ["arm32", "android"] => (Arch::Arm32, Platform::Android),
+            ["arm64", "android"] => (Arch::Arm64, Platform::Android),
+            ["x86", "android"] => (Arch::X86, Platform::Android),
+            ["x86_64", "android"] => (Arch::X86_64, Platform::Android),
+            ["x86_64", "windows"] => (Arch::X86_64, Platform::Windows),
+            ["x86_64", "linux"] => (Arch::X86_64, Platform::Linux),
+            _ => anyhow::bail!("Unsupported platform description: {}", platform_desc),
+        };
+        Ok(PlatformConfig { arch, platform })
+    }
+
+    pub fn android_abi(&self) -> Result<String> {
+        match self.arch {
+            Arch::Arm32 => Ok("armeabi-v7a".to_string()),
+            Arch::Arm64 => Ok("arm64-v8a".to_string()),
+            Arch::X86 => Ok("x86".to_string()),
+            Arch::X86_64 => Ok("x86_64".to_string()),
+        }
+    }
+
+    pub fn frida_arch(&self) -> Result<String> {
+        match self.arch {
+            Arch::Arm32 => Ok("arm".to_string()),
+            Arch::Arm64 => Ok("arm64".to_string()),
+            Arch::X86 => Ok("x86".to_string()),
+            Arch::X86_64 => Ok("x86_64".to_string()),
+        }
+    }
+
+    pub fn platform_str(&self) -> Result<String> {
+        match self.platform {
+            Platform::Android => Ok("android".to_string()),
+            Platform::Windows => Ok("windows".to_string()),
+            Platform::Linux => Ok("linux".to_string()),
+            Platform::MacOS => Ok("macos".to_string()),
+            Platform::Unknown => Ok("unknown".to_string()),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct ResolvedTarget {
     pub target_type: Option<String>,
-    pub platform: Option<String>,
+    pub platform: Option<PlatformConfig>,
     pub version: Option<String>,
     pub frida_version: Option<String>,
     pub mode: Option<String>,
@@ -224,9 +302,7 @@ impl ResolvedTarget {
         merge_fields!(
             self,
             other,
-
             target_type,
-            platform,
             version,
             frida_version,
             mode,
@@ -244,5 +320,9 @@ impl ResolvedTarget {
             sign,
             output_dir
         );
+
+        if let Some(platform_str) = &other.platform {
+            self.platform = Some(PlatformConfig::from_str(platform_str.clone()).unwrap());
+        }
     }
 }

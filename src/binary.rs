@@ -208,10 +208,6 @@ impl BinaryProcessor {
             - (fripack_section_segment.p_offset as i32 - data_section_segment.p_offset as i32)
             + (fripack_section_segment.p_vaddr as i32 - data_section_segment.p_vaddr as i32))
             as i32;
-
-            // should be: 325088
-            // 321056
-
         let embedded_config_bytes = embedded_config.as_bytes();
         self.data[embedded_config_offset..embedded_config_offset + embedded_config_bytes.len()]
             .copy_from_slice(&embedded_config_bytes);

@@ -1,13 +1,15 @@
 use anyhow::Result;
 use dirs;
-use log::{info, warn};
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
+use log::{info, warn};
 use reqwest::Client;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
+
+use crate::config::{Platform, PlatformConfig};
 
 pub struct Downloader {
     client: Client,
@@ -30,41 +32,41 @@ impl Downloader {
     pub async fn ensure_cache_dir(&self) -> Result<()> {
         if !self.cache_dir.exists() {
             fs::create_dir_all(&self.cache_dir).await?;
-            info!(
-                "✓ Created cache directory: {}",
-                self.cache_dir.display()
-            );
+            info!("✓ Created cache directory: {}", self.cache_dir.display());
         }
         Ok(())
     }
 
-    fn get_cache_file_path(&self, platform: &str, frida_version: &str) -> PathBuf {
-        let filename = format!("fripack-inject-{}-{}.so", platform, frida_version);
+    fn get_cache_file_path(&self, platform: &PlatformConfig, frida_version: &str) -> PathBuf {
+        let filename = self.get_prebuilt_file_name(platform, frida_version);
         self.cache_dir.join(filename)
     }
 
-    async fn is_file_cached(&self, platform: &str, frida_version: &str) -> bool {
+    async fn is_file_cached(&self, platform: &PlatformConfig, frida_version: &str) -> bool {
         let cache_path = self.get_cache_file_path(platform, frida_version);
         cache_path.exists()
     }
 
-    async fn load_cached_file(&self, platform: &str, frida_version: &str) -> Result<Vec<u8>> {
+    async fn load_cached_file(
+        &self,
+        platform: &PlatformConfig,
+        frida_version: &str,
+    ) -> Result<Vec<u8>> {
         let cache_path = self.get_cache_file_path(platform, frida_version);
-        info!(
-            "→ Loading from cache: {}",
-            cache_path.display()
-        );
+        info!("→ Loading from cache: {}", cache_path.display());
         Ok(fs::read(&cache_path).await?)
     }
 
-    async fn save_to_cache(&self, platform: &str, frida_version: &str, data: &[u8]) -> Result<()> {
+    async fn save_to_cache(
+        &self,
+        platform: &PlatformConfig,
+        frida_version: &str,
+        data: &[u8],
+    ) -> Result<()> {
         self.ensure_cache_dir().await?;
         let cache_path = self.get_cache_file_path(platform, frida_version);
         fs::write(&cache_path, data).await?;
-        info!(
-            "→ Cached to: {}",
-            cache_path.display()
-        );
+        info!("→ Cached to: {}", cache_path.display());
         Ok(())
     }
 
@@ -101,10 +103,7 @@ impl Downloader {
         }
 
         if count > 0 {
-            info!(
-                "✓ Removed {} cached files",
-                count
-            );
+            info!("✓ Removed {} cached files", count);
         } else {
             warn!("No cached files to remove.");
         }
@@ -146,26 +145,44 @@ impl Downloader {
         })
     }
 
+    pub fn get_prebuilt_file_name(&self, platform: &PlatformConfig, frida_version: &str) -> String {
+        format!(
+            "fripack-inject-{}-{}.{}",
+            frida_version,
+            platform,
+            if platform.platform == Platform::Windows {
+                "dll"
+            } else {
+                "so"
+            }
+        )
+    }
+
+    pub fn get_prebuilt_file_url(
+        &self,
+        platform: &PlatformConfig,
+        frida_version: &str,
+    ) -> String {
+        format!(
+            "https://github.com/FriRebuild/fripack-inject/releases/download/{}/{}",
+            frida_version,
+            self.get_prebuilt_file_name(platform, frida_version)
+        )
+    }
+
     pub async fn download_prebuilt_file(
         &self,
-        platform: &str,
+        platform: &PlatformConfig,
         frida_version: &str,
     ) -> Result<Vec<u8>> {
         if self.is_file_cached(platform, frida_version).await {
             return self.load_cached_file(platform, frida_version).await;
         }
 
-        let files = self.get_release_files(frida_version).await?;
+        let url = self.get_prebuilt_file_url(platform, frida_version);
+        let filename = self.get_prebuilt_file_name(platform, frida_version);
 
-        let matched_file = self.find_matching_file(&files, platform, frida_version)?;
-
-        let url = matched_file.download_url;
-        let filename = matched_file.name;
-
-        info!(
-            "→ Downloading prebuilt file: {}",
-            filename
-        );
+        info!("→ Downloading prebuilt file: {}", filename);
 
         let response = self.client.get(&url).send().await?;
 
@@ -202,183 +219,6 @@ impl Downloader {
         self.save_to_cache(platform, frida_version, &data).await?;
 
         Ok(data)
-    }
-
-    pub async fn download_to_file(&self, url: &str, path: &Path) -> Result<()> {
-        info!("→ Downloading: {}", url);
-
-        let response = self.client.get(url).send().await?;
-
-        if !response.status().is_success() {
-            anyhow::bail!(
-                "Failed to download file: HTTP {}: {}",
-                response.status(),
-                url
-            );
-        }
-
-        let total_size = response.content_length().unwrap_or(0);
-        let pb = ProgressBar::new(total_size);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-                .unwrap()
-                .progress_chars("#>-")
-        );
-
-        let mut file = File::create(path).await?;
-        let mut downloaded = 0u64;
-        let mut stream = response.bytes_stream();
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            file.write_all(&chunk).await?;
-            downloaded += chunk.len() as u64;
-            pb.set_position(downloaded);
-        }
-
-        file.flush().await?;
-        pb.finish_with_message("Download complete!");
-
-        info!(
-            "✓ Saved to: {}",
-            path.display()
-        );
-
-        Ok(())
-    }
-
-    pub async fn get_available_releases(&self) -> Result<Vec<String>> {
-        let url = "https://api.github.com/repos/FriRebuild/fripack-inject/releases";
-        let response = self.client.get(url).send().await?;
-
-        if !response.status().is_success() {
-            anyhow::bail!(
-                "Failed to fetch releases: HTTP {}: {}",
-                response.status(),
-                url
-            );
-        }
-
-        let releases: Vec<serde_json::Value> = response.json().await?;
-        let mut versions = Vec::new();
-
-        for release in releases {
-            if let Some(tag_name) = release.get("tag_name").and_then(|v| v.as_str()) {
-                if let Some(version) = tag_name.strip_prefix('v') {
-                    versions.push(version.to_string());
-                }
-            }
-        }
-
-        versions.sort_by(|a, b| b.cmp(a));
-
-        Ok(versions)
-    }
-
-    pub async fn get_release_files(&self, frida_version: &str) -> Result<Vec<ReleaseAsset>> {
-        let url = format!(
-            "https://api.github.com/repos/FriRebuild/fripack-inject/releases/tags/{}",
-            frida_version
-        );
-        let response = self
-            .client
-            .get(&url)
-            .header("User-Agent", "fripack-downloader")
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            anyhow::bail!(
-                "Failed to fetch release: HTTP {}: {}",
-                response.status(),
-                url
-            );
-        }
-
-        let release: serde_json::Value = response.json().await?;
-        let assets = release
-            .get("assets")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| anyhow::anyhow!("No assets found in release"))?;
-
-        let mut files = Vec::new();
-        for asset in assets {
-            if let (Some(name), Some(download_url)) = (
-                asset.get("name").and_then(|v| v.as_str()),
-                asset.get("browser_download_url").and_then(|v| v.as_str()),
-            ) {
-                files.push(ReleaseAsset {
-                    name: name.to_string(),
-                    download_url: download_url.to_string(),
-                });
-            }
-        }
-
-        Ok(files)
-    }
-
-    fn find_matching_file(
-        &self,
-        files: &[ReleaseAsset],
-        platform: &str,
-        frida_version: &str,
-    ) -> Result<ReleaseAsset> {
-        let platform_mappings = std::collections::HashMap::from([
-            ("arm64-v8a", vec!["android-arm64", "arm64"]),
-            ("armeabi-v7a", vec!["android-arm", "arm"]),
-            ("x86", vec!["android-x86", "x86"]),
-            ("x86_64", vec!["android-x86_64", "x86_64"]),
-            ("linux-x86_64", vec!["linux-x86_64"]),
-        ]);
-
-        let platform_keywords = platform_mappings
-            .get(platform)
-            .unwrap_or(&vec![platform])
-            .clone();
-
-        for file in files {
-            let filename = file.name.to_lowercase();
-            let version_lower = frida_version.to_lowercase();
-
-            if filename.contains(&version_lower) {
-                for keyword in &platform_keywords {
-                    if filename.contains(&keyword.to_lowercase()) {
-                        return Ok(file.clone());
-                    }
-                }
-            }
-        }
-
-        for file in files {
-            let filename = file.name.to_lowercase();
-
-            for keyword in &platform_keywords {
-                if filename.contains(&keyword.to_lowercase()) {
-                    warn!(
-                        "⚠ Warning: Found platform match but version may not match exactly: {}",
-                        file.name
-                    );
-                    return Ok(file.clone());
-                }
-            }
-        }
-
-        for file in files {
-            if file.name.ends_with(".so") {
-                warn!(
-                    "⚠ Warning: Using fallback file (no platform match): {}",
-                    file.name
-                );
-                return Ok(file.clone());
-            }
-        }
-
-        anyhow::bail!(
-            "No matching file found for platform: {} and version: {}",
-            platform,
-            frida_version
-        )
     }
 }
 

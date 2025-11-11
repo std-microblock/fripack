@@ -68,7 +68,7 @@ impl Builder {
             info!("→ Using override prebuilt file: {}", override_file);
             fs::read(override_file).await?
         } else {
-            info!("→ Downloading prebuilt file for platform: {}", platform);
+            info!("→ Downloading prebuilt file for platform: {:?}", platform);
             self.downloader
                 .download_prebuilt_file(platform, frida_version)
                 .await?
@@ -173,7 +173,7 @@ impl Builder {
 
         // 6. Copy the generated .so file to lib/架构/libxxxx.so within the temporary directory.
 
-        let lib_dir = temp_path.join("lib").join(platform);
+        let lib_dir = temp_path.join("lib").join(platform.android_abi()?);
         fs::create_dir_all(&lib_dir).await?;
         let dest_so_path = lib_dir.join(&random_so_name);
         fs::copy(&temp_so_path, &dest_so_path).await?;
@@ -227,7 +227,7 @@ impl Builder {
 "#,
             package_name.replace(".", "/"),
             random_class_name,
-            platform.split("-").next().unwrap_or("arm64"),
+            platform.android_abi()?.split("-").next().unwrap_or("arm64"),
             random_so_name
         );
 
