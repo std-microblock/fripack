@@ -61,7 +61,8 @@ The following options are available for all target types:
 - `entry` (required): Entry point script to bundle.
 - `fridaVersion` (required): Frida version to use (must be 17.5.1 or newer).
 - `outputDir` (default: `./fripack`): Output directory for built artifacts.
-- `platform`: Target platform (e.g., `x86_64`, `arm64-v8a`).
+- `platform`: Target platform (e.g., `android-arm64`, `windows-x86_64`).
+  - Valid values: `android-arm32`, `android-arm64`, `android-x86`, `android-x64`, `windows-x64`, `linux-x64`
 - `version`: Version of your plugin.
 - `type`: Type of the target (defines the output format).
 - `inherit`: Key of another target to inherit configuration from.
@@ -89,7 +90,7 @@ Example using inheritance to avoid repetition:
     },
     "raw-so": {
         "inherit": "base",
-        "type": "android-so"
+        "type": "shared"
     }
 }
 ```
@@ -102,7 +103,7 @@ Only targets with a `type` field will be built.
 
 #### `xposed`
 
-Builds your Frida script into an Xposed Module.  
+Builds your Frida script into an Xposed Module. Only supports `Android` platforms.
 **Requires:** [`apktool`](https://apktool.org/) installed on your system.
 
 **Additional options:**
@@ -115,10 +116,11 @@ Builds your Frida script into an Xposed Module.
 - `name` (required): Display name of the module.
 - `scope` (optional): Suggested target scope for the module.
 - `description` (optional): Description of the module.
+- `
 
-#### `android-so`
+#### `shared`
 
-Builds your Frida script into a shared object (`.so`) that can be loaded via various methods (e.g., `LD_PRELOAD`).
+Builds your Frida script into a shared library (`.so` / `.dll`) that can be loaded via various methods (e.g., `LD_PRELOAD`).
 
 ---
 

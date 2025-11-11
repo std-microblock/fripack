@@ -244,7 +244,6 @@ impl PlatformConfig {
 
         let (platform, arch) = match parts.as_slice() {
             ["android", "arm32"] => (Platform::Android, Arch::Arm32),
-            ["android", "arm64-v8a"] => (Platform::Android, Arch::Arm64),
             ["android", "arm64"] => (Platform::Android, Arch::Arm64),
             ["android", "x86"] => (Platform::Android, Arch::X86),
             ["android", "x86_64"] => (Platform::Android, Arch::X86_64),
@@ -254,6 +253,7 @@ impl PlatformConfig {
             ["windows", "x64"] => (Platform::Windows, Arch::X86_64),
             ["linux", "x86"] => (Platform::Linux, Arch::X86),
             ["linux", "x86_64"] => (Platform::Linux, Arch::X86_64),
+            ["linux", "x64"] => (Platform::Linux, Arch::X86_64),
             ["macos", "x86_64"] => (Platform::MacOS, Arch::X86_64),
             ["macos", "arm64"] => (Platform::MacOS, Arch::Arm64),
             _ => anyhow::bail!("Unsupported platform description: {platform_desc}"),
