@@ -41,5 +41,21 @@
         "inherit": "base",
         "type": "shared",
         "platform": "windows-x64",
+    },
+    "inject": {
+        "type": "inject-apk",
+        "platform": "android-arm64",
+        "fridaVersion": "17.5.1",
+        "entry": "main.js",
+        "injectApk": {
+            "sourceApkPath": "E:\\rev-yunyundong\\云运动_3.5.7_kill.apk",
+            "injectMode": "NativeAddNeeded",
+            // "targetLib": "libnative-lib.so",
+        },
+        "sign": {
+            "keystore": "C:\\Users\\MicroBlock\\.android\\debug.keystore",
+            "keystorePass": "android",
+            "keystoreAlias": "androiddebugkey"
+        }
     }
 }

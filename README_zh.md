@@ -7,7 +7,17 @@
 
 Frida 是一个强大的工具，但其体积较大且通常需要 root 权限，这使得将脚本分发给最终用户变得困难。这常常限制了 Frida 在开发面向更广泛用户的插件中的应用。
 
-Fripack 通过将你的 Frida 脚本打包成各种可执行格式来解决这个问题——例如 Xposed 模块、捆绑模块的 APK、用于 `LD_PRELOAD` 的 `.so`，或可注入的 DLL——使得基于 Frida 的插件能够轻松分发和使用。
+Fripack 通过将你的 Frida 脚本打包成各种可执行格式来解决这个问题——例如 Xposed 模块、修补的 APK、用于 `LD_PRELOAD` 的共享对象，或可注入的 DLL——使得基于 Frida 的插件能够轻松分发和使用。
+
+### 二进制大小很重要
+
+原始的 Frida 项目体积庞大。Fripack 通过精简和压缩 Frida，使得在所有平台（Linux 除外）上的二进制输出都小于 10 MB。
+
+<img width="345" height="168" alt="image" src="https://github.com/user-attachments/assets/bf6f1134-f9a0-4d31-b15a-e49ae5c545d8" />
+
+### 一键构建
+
+跨平台的 Frida 脚本通常使得为不同目标构建交付物变得繁琐——即使使用 Frida Gadget 也是如此。Fripack 通过支持一次命令构建多个平台来简化开发。
 
 ## 安装
 
@@ -126,6 +136,52 @@ fripack build xposed
 
 将你的 Frida 脚本构建成一个共享库 (`.so` / `.dll`)，可以通过多种方式加载（例如 `LD_PRELOAD`）。
 
+#### `inject-apk`
+
+通过修改现有 APK 的原生库来将你的 Frida 脚本注入其中。仅支持 `Android` 平台。
+**要求：** 系统中已安装 [`apktool`](https://apktool.org/)。
+
+还建议在路径中包含 [`zipalign`](https://developer.android.com/tools/zipalign)。
+
+**额外选项：**
+
+- `injectApk` (必需): 注入配置对象。
+  - `sourceApkPath` (可选): 要注入的源 APK 文件路径。
+  - `sourceApkPackageName` (可选): 要从连接设备提取的 APK 包名。
+    - 必须提供 `sourceApkPath` 或 `sourceApkPackageName` 中的一个。
+    - 使用 `sourceApkPackageName` 时，APK 将从连接的设备提取并缓存以供后续构建使用。这要求系统中已安装 [`adb`](https://developer.android.com/studio/command-line/adb)。
+  - `injectMode` (可选): 注入模式。目前仅支持 `"NativeAddNeeded"`。
+  - `targetLib` (可选): 要注入的特定原生库（例如 `"libnative-lib.so"`）。
+    - 如果未指定，将按以下优先级顺序搜索库：
+      1. `libCrashSight.so`、`libBugly.so`、`libmmkv.so`（白名单）
+      2. lib 目录中最小的 `.so` 文件（会显示警告）
+- `sign` (可选): 最终 APK 的签名配置（格式与 Xposed 相同）。
+  - `keystore`: 密钥库路径。
+  - `keystorePass`: 密钥库密码。
+  - `keystoreAlias`: 密钥库中的别名。
+
+**配置示例：**
+```json
+{
+    "inject-apk": {
+        "type": "inject-apk",
+        "platform": "android-arm64",
+        "fridaVersion": "17.5.1",
+        "entry": "main.js",
+        "injectApk": {
+            "sourceApkPackageName": "com.example.app",
+            "injectMode": "NativeAddNeeded",
+            "targetLib": "libnative-lib.so",
+        },
+        "sign": {
+            "keystore": "./.android/debug.keystore",
+            "keystorePass": "android",
+            "keystoreAlias": "androiddebugkey"
+        }
+    }
+}
+```
+
 ---
 
 ## 注意事项
@@ -143,8 +199,8 @@ adb logcat FriPackInject:D *:S
 
 在其他平台上，日志会定向到 `stdout`。
 
-### `ReferenceError: 'Java' is not defined`
-从 Frida 17.0.0 开始，`frida-java-bridge` 不再与 Frida 的 GumJS 运行时捆绑在一起。这意味着用户现在必须明确引入他们想要使用的 bridge。
+### ReferenceError: 'Java' is not defined
+从 Frida 17.0.0 开始，`frida-java-bridge` 不再与 Frida 的 GumJS 运行时捆绑在一起。这意味着用户现在必须明确引入他们想要使用的桥接器。
 
 在打包之前，你必须安装 `frida-java-bridge` 并通过 `frida-compile` 构建脚本。查看 https://frida.re/docs/bridges/ 了解更多详情。
 

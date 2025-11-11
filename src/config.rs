@@ -22,6 +22,24 @@ pub struct SignConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InjectMode {
+    #[serde(rename = "NativeAddNeeded")]
+    NativeAddNeeded,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InjectApkConfig {
+    #[serde(rename = "sourceApkPath")]
+    pub source_apk_path: Option<String>,
+    #[serde(rename = "sourceApkPackageName")]
+    pub source_apk_package_name: Option<String>,
+    #[serde(rename = "injectMode")]
+    pub inject_mode: InjectMode,
+    #[serde(rename = "targetLib")]
+    pub target_lib: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FripackConfig {
     #[serde(flatten)]
     pub targets: HashMap<String, TargetConfig>,
@@ -54,6 +72,7 @@ impl FripackConfig {
                 target_base_name: None,
                 before_build: None,
                 after_build: None,
+                inject_apk: None,
             },
         );
 
@@ -87,6 +106,7 @@ impl FripackConfig {
                 target_base_name: None,
                 before_build: None,
                 after_build: None,
+                inject_apk: None,
             },
         );
 
@@ -113,6 +133,43 @@ impl FripackConfig {
                 target_base_name: None,
                 before_build: None,
                 after_build: None,
+                inject_apk: None,
+            },
+        );
+
+        // Example Inject APK
+        targets.insert(
+            "example-inject-apk".to_string(),
+            TargetConfig {
+                inherit: None,
+                target_type: Some("inject-apk".to_string()),
+                platform: Some("arm64-v8a".to_string()),
+                version: Some("1.0.0".to_string()),
+                frida_version: Some("17.5.1".to_string()),
+                mode: Some("embedjs".to_string()),
+                entry: Some("main.js".to_string()),
+                xz: Some(false),
+                override_prebuild_file: None,
+                package_name: None,
+                name: None,
+                icon: None,
+                scope: None,
+                description: None,
+                output_dir: None,
+                target_base_name: None,
+                before_build: None,
+                after_build: None,
+                inject_apk: Some(InjectApkConfig {
+                    source_apk_path: None,
+                    source_apk_package_name: Some("com.example.app".to_string()),
+                    inject_mode: InjectMode::NativeAddNeeded,
+                    target_lib: Some("libnative-lib.so".to_string()),
+                }),
+                sign: Some(SignConfig {
+                    keystore: "C:\\Users\\YourUser\\.android\\debug.keystore".to_string(),
+                    keystore_pass: "android".to_string(),
+                    keystore_alias: "androiddebugkey".to_string(),
+                }),
             },
         );
 
@@ -207,6 +264,8 @@ pub struct TargetConfig {
     pub before_build: Option<String>,
     #[serde(rename = "afterBuild")]
     pub after_build: Option<String>,
+    #[serde(rename = "injectApk")]
+    pub inject_apk: Option<InjectApkConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -323,6 +382,7 @@ pub struct ResolvedTarget {
     pub target_base_name: Option<String>,
     pub before_build: Option<String>,
     pub after_build: Option<String>,
+    pub inject_apk: Option<InjectApkConfig>,
 }
 
 impl ResolvedTarget {
@@ -346,7 +406,8 @@ impl ResolvedTarget {
             output_dir,
             target_base_name,
             before_build,
-            after_build
+            after_build,
+            inject_apk
         );
 
         if let Some(platform_str) = &other.platform {

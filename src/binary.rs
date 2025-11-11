@@ -1,7 +1,14 @@
 use anyhow::{Context, Result};
 use log::info;
 use object::{
-    LittleEndian as LE, elf::{PF_R, PF_W, PT_LOAD, PT_PHDR}, pe, read::{coff::CoffHeader, pe::{ImageNtHeaders, ImageOptionalHeader}}
+    build::elf::Dynamic,
+    elf::{PF_R, PF_W, PT_DYNAMIC, PT_LOAD, PT_PHDR},
+    pe,
+    read::{
+        coff::CoffHeader,
+        pe::{ImageNtHeaders, ImageOptionalHeader},
+    },
+    LittleEndian as LE,
 };
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
@@ -85,6 +92,47 @@ impl BinaryProcessor {
             .find(|&i| {
                 self.data[i..i + 4] == magic1_bytes && self.data[i + 4..i + 8] == magic2_bytes
             })
+    }
+
+    pub fn add_needed_library(&mut self, lib_name: &str) -> Result<()> {
+        match self.format {
+            ObjectFormat::Elf => {
+                let data_cloned = self.data.clone();
+                let mut elf = object_rewrite::Rewriter::read(&data_cloned)?;
+                elf.elf_add_needed(vec![lib_name.as_bytes().to_vec()].as_ref())?;
+                self.data = vec![];
+                elf.write(&mut self.data)?;
+
+                // Fix .dynamic section size
+                let data_cloned = self.data.clone();
+                let mut elf = object::build::elf::Builder::read(data_cloned.as_slice())?;
+                elf.delete_orphan_symbols();
+                elf.delete_unused_versions();
+                elf.set_section_sizes();
+                if let Some(dynamic_segment) =
+                    elf.segments.iter_mut().find(|seg| seg.p_type == PT_DYNAMIC)
+                {
+                    let dynamic_section = elf
+                        .sections
+                        .iter_mut()
+                        .find(|sec| sec.sh_type == object::elf::SHT_DYNAMIC)
+                        .context("Failed to find .dynamic section")?;
+                    let dynamic_data_size = dynamic_section.sh_size;
+                    dynamic_segment.p_filesz = dynamic_data_size;
+                    dynamic_segment.p_memsz = dynamic_data_size;
+                    dynamic_section.sh_size = dynamic_data_size;
+
+                    info!("Updated .dynamic section size to {}", dynamic_data_size);
+                }
+
+                self.data = vec![];
+                elf.write(&mut self.data)?;
+            }
+            ObjectFormat::Pe => {
+                anyhow::bail!("Adding needed library is not supported for PE format");
+            }
+        }
+        Ok(())
     }
 
     pub fn add_embedded_config_data(&mut self, config_data: &[u8], use_xz: bool) -> Result<()> {

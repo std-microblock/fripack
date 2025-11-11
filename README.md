@@ -135,6 +135,51 @@ Builds your Frida script into an Xposed Module. Only supports `Android` platform
 
 Builds your Frida script into a shared library (`.so` / `.dll`) that can be loaded via various methods (e.g., `LD_PRELOAD`).
 
+#### `inject-apk`
+
+Injects your Frida script into an existing APK by modifying one of its native libraries. Only supports `Android` platforms.
+**Requires:** [`apktool`](https://apktool.org/) installed on your system.
+
+It's also recommended to have [`zipalign`](https://developer.android.com/tools/zipalign) in your path.
+
+**Additional options:**
+
+- `injectApk` (required): Injection configuration object.
+  - `sourceApkPath` (optional): Path to the source APK file to inject into.
+  - `sourceApkPackageName` (optional): Package name of the APK to extract from a connected device.
+    - Either `sourceApkPath` or `sourceApkPackageName` must be provided.
+    - When using `sourceApkPackageName`, the APK will be extracted from the connected device and cached for future builds. This requires [`adb`](https://developer.android.com/studio/command-line/adb) to be installed on your system.
+  - `injectMode` (optional): Injection mode. Currently only supports `"NativeAddNeeded"`.
+  - `targetLib` (optional): Specific native library to target for injection (e.g., `"libnative-lib.so"`).
+    - If not specified, will search for libraries in this priority order:
+      1. `libCrashSight.so`, `libBugly.so`, `libmmkv.so` (whitelist)
+      2. The smallest `.so` file in the lib directory (with warning)
+- `sign` (optional): Signing configuration for the final APK (same format as Xposed).
+  - `keystore`: Path to the keystore.
+  - `keystorePass`: Keystore passphrase.
+  - `keystoreAlias`: Alias in the keystore.
+**Example configuration:**
+```json
+{
+    "inject-apk": {
+        "type": "inject-apk",
+        "platform": "android-arm64",
+        "fridaVersion": "17.5.1",
+        "entry": "main.js",
+        "injectApk": {
+            "sourceApkPackageName": "com.example.app",
+            "injectMode": "NativeAddNeeded",
+            "targetLib": "libnative-lib.so",
+        },
+        "sign": {
+            "keystore": "./.android/debug.keystore",
+            "keystorePass": "android",
+            "keystoreAlias": "androiddebugkey"
+        }
+    }
+}
+```
+
 ---
 
 ## Notes

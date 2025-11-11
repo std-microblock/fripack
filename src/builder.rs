@@ -40,6 +40,7 @@ impl Builder {
         let build_result = match target.target_type.as_deref() {
             Some("shared") => self.build_shared(target_name, target).await,
             Some("xposed") => self.build_xposed(target_name, target).await,
+            Some("inject-apk") => self.build_inject_apk(target_name, target).await,
             Some(other) => anyhow::bail!("Unsupported target type: {other}"),
             None => {
                 warn!("Target type not specified for target: {target_name}, skipping...");
@@ -148,10 +149,7 @@ impl Builder {
             .platform
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing required field: platform"))?;
-        let output_filename = format!(
-            "{base_name}-{platform}.{}",
-            platform.platform.binary_ext()
-        );
+        let output_filename = format!("{base_name}-{platform}.{}", platform.platform.binary_ext());
         let output_file_path = std::path::Path::new(output_dir).join(&output_filename);
         std::fs::create_dir_all(output_dir)?;
         fs::write(&output_file_path, output_data).await?;
@@ -383,6 +381,8 @@ doNotCompress:
         let output = tokio::process::Command::new("apktool")
             .arg("b")
             .arg(temp_path.to_str().unwrap())
+            .arg("-o")
+            .arg(temp_path.join("dist").join("app-debug.apk"))
             .output()
             .await?;
 
@@ -456,6 +456,337 @@ doNotCompress:
         }
 
         Ok(())
+    }
+
+    async fn build_inject_apk(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<()> {
+        let base_name = target.target_base_name.as_deref().unwrap_or(target_name);
+        info!("→ Building Inject APK target: {target_name} (base name: {base_name})");
+
+        // Get required fields
+        let platform = target
+            .platform
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Missing required field: platform"))?;
+
+        if platform.platform != Platform::Android {
+            anyhow::bail!("Inject APK target only supports Android platform");
+        }
+
+        let inject_config = target
+            .inject_apk
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Missing required field: injectApk"))?;
+
+        // Validate that either sourceApkPath or sourceApkPackageName is provided
+        if inject_config.source_apk_path.is_none()
+            && inject_config.source_apk_package_name.is_none()
+        {
+            anyhow::bail!("Either sourceApkPath or sourceApkPackageName must be provided");
+        }
+
+        let output_dir = target.output_dir.as_deref().unwrap_or("./fripack");
+        let injected_binary_data = self.generate_binary(target).await?;
+
+        // Get source APK path (either from path or extract from device)
+        let source_apk_path = if let Some(apk_path) = &inject_config.source_apk_path {
+            info!("→ Using source APK path: {apk_path}");
+            PathBuf::from(apk_path)
+        } else {
+            let package_name = inject_config.source_apk_package_name.as_ref().unwrap();
+            info!("→ Extracting APK from device for package: {package_name}");
+            self.extract_apk_from_device(package_name).await?
+        };
+
+        // Create temporary directory for APK manipulation
+        let temp_dir = tempfile::tempdir()?;
+        let temp_path = temp_dir.path();
+        info!("→ Created temporary directory: {}", temp_path.display());
+
+        // Decompile APK using apktool
+        let decompiled_dir = temp_path.join("decompiled");
+        info!("→ Decompiling APK with apktool...");
+        let output = tokio::process::Command::new("apktool")
+            .arg("d")
+            .arg("-f")
+            .arg("-r")
+            .arg("-s")
+            .arg(&source_apk_path)
+            .arg("-o")
+            .arg(&decompiled_dir)
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            anyhow::bail!(
+                "apktool decompile failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        info!("✓ APK decompiled successfully");
+
+        // Find target native library
+        let lib_dir = decompiled_dir.join("lib").join(platform.android_abi()?);
+        let target_lib_path = self
+            .find_target_library(&lib_dir, &inject_config.target_lib)
+            .await?;
+
+        info!("→ Selected target library: {}", target_lib_path.display());
+
+        // Read the target library
+        let mut target_lib_data = fs::read(&target_lib_path).await?;
+
+        // Inject our library using ELF manipulation
+        let inject_lib_name = format!("lib{}.so", generate_random_string(8));
+        info!("→ Injecting library as: {}", inject_lib_name);
+        let mut processor = BinaryProcessor::new(target_lib_data.clone())?;
+        processor.add_needed_library(&inject_lib_name)?;
+        target_lib_data = processor.into_data();
+
+        // Write the modified library back
+        fs::write(&target_lib_path, &target_lib_data).await?;
+        fs::write(
+            Path::new(&target_lib_path)
+                .parent()
+                .unwrap()
+                .join(&inject_lib_name),
+            &injected_binary_data,
+        )
+        .await?;
+        info!("→ Modified library written back");
+
+        // Add our native lib path into the do_not_compress list in apktool.yml
+        let apktool_yml_path = decompiled_dir.join("apktool.yml");
+        let apktool_yml_content = fs::read_to_string(&apktool_yml_path).await?;
+        let mut apktool_yml: serde_yaml::Value = serde_yaml::from_str(&apktool_yml_content)?;
+
+        let inject_lib_relpath = format!("lib/{}/{}", platform.android_abi()?, inject_lib_name);
+        if let Some(do_not_compress) = apktool_yml
+            .get_mut("doNotCompress")
+            .and_then(|v| v.as_sequence_mut())
+        {
+            do_not_compress.push(serde_yaml::Value::String(inject_lib_relpath));
+        } else {
+            apktool_yml["doNotCompress"] =
+                serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(inject_lib_relpath)]);
+        }
+
+        let apktool_yml_serialized = serde_yaml::to_string(&apktool_yml)?;
+        fs::write(&apktool_yml_path, apktool_yml_serialized).await?;
+        info!("→ Updated apktool.yml to avoid compressing injected library");
+
+        // Rebuild APK using apktool
+        info!("→ Rebuilding APK with apktool...");
+        let rebuilt_apk_path = decompiled_dir.join("dist").join("app-debug.apk");
+        let output = tokio::process::Command::new("apktool")
+            .arg("b")
+            .arg(&decompiled_dir)
+            .arg("-o")
+            .arg(&rebuilt_apk_path)
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            anyhow::bail!(
+                "apktool build failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        info!("✓ APK rebuilt successfully with apktool");
+
+        // Run zipalign on the rebuilt APK
+        info!("→ Aligning APK with zipalign...");
+        let aligned_apk_path = temp_path.join(format!("{base_name}-{platform}-aligned.apk"));
+        let output = tokio::process::Command::new("zipalign")
+            .arg("-v")
+            .arg("-p")
+            .arg("4")
+            .arg(&rebuilt_apk_path)
+            .arg(&aligned_apk_path)
+            .output()
+            .await?;
+        let rebuilt_apk_path = if output.status.success() {
+            info!("✓ APK aligned successfully");
+            aligned_apk_path
+        } else {
+            warn!(
+                "zipalign failed: {}, proceeding with unaligned APK. Apk may not install with reason 'INSTALL_FAILED_INVALID_APK: Failed to extract native libraries' for some applications.",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            rebuilt_apk_path
+        };
+
+        // Copy the rebuilt APK to output directory
+        let final_apk_name = format!("{base_name}-{platform}-injected.apk");
+        let final_apk_path = Path::new(output_dir).join(&final_apk_name);
+        std::fs::create_dir_all(output_dir)?;
+
+        // Sign the APK if signing configuration is provided
+        if let Some(sign_config) = &target.sign {
+            info!("→ Signing APK...");
+            let signed_apk_path = temp_path.join(format!("{base_name}-{platform}-signed.apk"));
+
+            let mut command = if cfg!(target_os = "windows") {
+                let mut cmd = Command::new("cmd");
+                cmd.arg("/C");
+                cmd.arg("apksigner");
+                cmd
+            } else {
+                Command::new("apksigner")
+            };
+
+            let output = command
+                .arg("sign")
+                .arg("--ks")
+                .arg(&sign_config.keystore)
+                .arg("--ks-key-alias")
+                .arg(&sign_config.keystore_alias)
+                .arg("--ks-pass")
+                .arg(format!("pass:{}", sign_config.keystore_pass))
+                .arg("--out")
+                .arg(&signed_apk_path)
+                .arg(&rebuilt_apk_path)
+                .output()
+                .await?;
+
+            if !output.status.success() {
+                anyhow::bail!(
+                    "apksigner failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+
+            // Copy signed APK to final location
+            fs::copy(&signed_apk_path, &final_apk_path).await?;
+            info!("✓ APK signed successfully");
+        } else {
+            fs::copy(&rebuilt_apk_path, &final_apk_path).await?;
+        }
+
+        info!(
+            "✓ Successfully built inject APK: {}",
+            final_apk_path.display()
+        );
+        Ok(())
+    }
+
+    async fn extract_apk_from_device(&self, package_name: &str) -> Result<PathBuf> {
+        let cache_dir = Path::new("./fripack_cache").join("apks");
+        std::fs::create_dir_all(&cache_dir)?;
+
+        let cached_apk_path = cache_dir.join(format!("{}.apk", package_name.replace(":", "_")));
+
+        // Check if APK is already cached
+        if cached_apk_path.exists() {
+            info!("→ Using cached APK: {}", cached_apk_path.display());
+            return Ok(cached_apk_path);
+        }
+
+        // Get APK path from device
+        info!("→ Getting APK path from device...");
+        let output = tokio::process::Command::new("adb")
+            .arg("shell")
+            .arg("pm")
+            .arg("path")
+            .arg(package_name)
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            anyhow::bail!(
+                "Failed to get APK path from device: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let apk_path_line = stdout
+            .lines()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No APK path returned"))?;
+
+        let device_apk_path = apk_path_line
+            .strip_prefix("package:")
+            .ok_or_else(|| anyhow::anyhow!("Invalid APK path format"))?;
+
+        // Pull APK from device
+        info!("→ Pulling APK from device: {}", device_apk_path);
+        let output = tokio::process::Command::new("adb")
+            .arg("pull")
+            .arg(device_apk_path)
+            .arg(&cached_apk_path)
+            .output()
+            .await?;
+
+        if !output.status.success() {
+            anyhow::bail!(
+                "Failed to pull APK from device: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        info!("✓ APK extracted and cached: {}", cached_apk_path.display());
+        Ok(cached_apk_path)
+    }
+
+    async fn find_target_library(
+        &self,
+        lib_dir: &Path,
+        target_lib: &Option<String>,
+    ) -> Result<PathBuf> {
+        if !lib_dir.exists() {
+            anyhow::bail!("Library directory does not exist: {}", lib_dir.display());
+        }
+
+        // If target_lib is specified, try to find it
+        if let Some(target_name) = target_lib {
+            let target_path = lib_dir.join(target_name);
+            if target_path.exists() {
+                return Ok(target_path);
+            }
+            anyhow::bail!("Target library not found: {}", target_path.display());
+        }
+
+        // Search for libraries in whitelist
+        let whitelist = ["libCrashSight.so", "libBugly.so", "libmmkv.so"];
+        for lib_name in &whitelist {
+            let lib_path = lib_dir.join(lib_name);
+            if lib_path.exists() {
+                info!("→ Found whitelist library: {}", lib_name);
+                return Ok(lib_path);
+            }
+        }
+
+        // If no whitelist library found, find the smallest .so file
+        warn!("No whitelist library found, searching for smallest .so file");
+        let mut entries = tokio::fs::read_dir(lib_dir).await?;
+        let mut smallest_lib: Option<(PathBuf, u64)> = None;
+
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("so") {
+                let metadata = entry.metadata().await?;
+                let size = metadata.len();
+
+                if let Some((_, smallest_size)) = &smallest_lib {
+                    if size < *smallest_size {
+                        smallest_lib = Some((path, size));
+                    }
+                } else {
+                    smallest_lib = Some((path, size));
+                }
+            }
+        }
+
+        if let Some((lib_path, size)) = smallest_lib {
+            warn!(
+                "→ Selected smallest library: {} ({} bytes)",
+                lib_path.display(),
+                size
+            );
+            Ok(lib_path)
+        } else {
+            anyhow::bail!("No .so files found in library directory");
+        }
     }
 
     pub async fn build_all(&mut self) -> Result<()> {
