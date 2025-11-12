@@ -15,6 +15,7 @@
         "xposed": {
             "packageName": "com.fripack.examplexposedmodule",
             "name": "Fripack Xposed Module Example",
+            "scope": "tv.danmaku.bili"
         },
         "sign": {
             "keystore": "C:\\Users\\MicroBlock\\.android\\debug.keystore",
@@ -27,6 +28,12 @@
     "xp-arm32": {
         "inherit": "xp",
         "platform": "android-arm32",
+        "xposed": {
+            "packageName": "com.fripack.examplexposedmodule.arm32",
+            "name": "Fripack Xposed Module Example arm32",
+            "scope": "tv.danmaku.bili"
+        },
+        "afterBuild": "adb install fripack/fripack-android-arm.apk",
     },
     "xp-x86": {
         "inherit": "xp",
@@ -58,7 +65,7 @@
         "zygisk": {
             "id": "com.fripack.examplezygiskmodule",
             "name": "Fripack Zygisk Module Example",
-            "scope": "com.yunzhi.tiyu;com.hypergryph.skland"
+            "scope": "com.yunzhi.tiyu;com.hypergryph.skland;com.hypergryph.arknights",
         },
     },
     // "inject-apk": {

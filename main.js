@@ -1,1 +1,1 @@
-console.log("Hello, World from Fripack!", Interceptor);
+console.log("Hello, FriPack!", Interceptor);

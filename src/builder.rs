@@ -280,7 +280,7 @@ impl Builder {
 "#,
             package_name.replace(".", "/"),
             random_class_name,
-            platform.android_abi()?.split("-").next().unwrap_or("arm64"),
+            platform.frida_arch()?,
             random_so_name
         );
 

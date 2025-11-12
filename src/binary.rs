@@ -306,16 +306,25 @@ impl BinaryProcessor {
             };
 
             let mut replacements = 0;
+
+            let kwd = |s: &'static str| (s.as_bytes(), Self::generate_random_string(s.len()));
+
             // Define keywords to replace
             let keywords = [
-                (b"frida".as_slice(), Self::generate_random_string(5)),
-                (b"gum-js", Self::generate_random_string(6)),
-                (b"gum", Self::generate_random_string(3)),
-                (b"gmain", Self::generate_random_string(5)),
-                (b"gdbus", Self::generate_random_string(5)),
-                (b"Gum", Self::generate_random_string(3)),
-                (b"Frida", Self::generate_random_string(5)),
-                (b"GUM", Self::generate_random_string(3)),
+                kwd("frida"),
+                (b"GMainLoop", "pool-6-th".to_string()),
+                (b"gum-js-loop", "pool-6-thre".to_string()),
+                (b"gmain", "Timer".to_string()),
+                kwd("gum-js"),
+                kwd("gum"),
+                kwd("gdbus"),
+                kwd("Gum"),
+                kwd("Frida"),
+                kwd("GUM"),
+                kwd("GDBus"),
+                kwd("g_dbus"),
+                kwd("g_main"),
+                kwd("GMain"),
             ];
 
             for (keyword_bytes, replacement_str) in &keywords {
