@@ -91,7 +91,11 @@ impl BinaryProcessor {
             .len()
             .saturating_sub(std::mem::size_of::<EmbeddedConfig>()))
             .find(|&i| {
-                self.data[i..i + 4] == magic1_bytes && self.data[i + 4..i + 8] == magic2_bytes
+                self.data[i..i + 4] == magic1_bytes
+                    && self.data[i + 4..i + 8] == magic2_bytes
+                    && self.data[i + 8..i + 12] == (1i32).to_le_bytes()
+                    && self.data[i + 12..i + 16] == [0, 0, 0, 0]
+                    && self.data[i + 16..i + 20] == [0, 0, 0, 0]
             })
     }
 
