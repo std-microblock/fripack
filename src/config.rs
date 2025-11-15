@@ -80,7 +80,6 @@ impl FripackConfig {
                 platform: None,
                 version: Some("1.0.0".to_string()),
                 frida_version: Some("17.5.1".to_string()),
-                mode: Some("embedjs".to_string()),
                 entry: Some("main.js".to_string()),
                 xz: Some(false),
                 override_prebuild_file: None,
@@ -92,6 +91,8 @@ impl FripackConfig {
                 inject_apk: None,
                 xposed: None,
                 zygisk: None,
+                watch_path: None,
+                push_path: None,
             },
         );
 
@@ -104,7 +105,6 @@ impl FripackConfig {
                 platform: Some("arm64-v8a".to_string()),
                 version: Some("1.0.0".to_string()),
                 frida_version: None,
-                mode: None,
                 entry: None,
                 xz: None,
                 override_prebuild_file: None,
@@ -129,6 +129,8 @@ impl FripackConfig {
                     ),
                 }),
                 zygisk: None,
+                watch_path: None,
+                push_path: None,
             },
         );
 
@@ -141,7 +143,6 @@ impl FripackConfig {
                 platform: Some("arm64-v8a".to_string()),
                 version: None,
                 frida_version: None,
-                mode: None,
                 entry: None,
                 xz: None,
                 override_prebuild_file: Some("./libfripack-inject.so".to_string()),
@@ -153,6 +154,8 @@ impl FripackConfig {
                 inject_apk: None,
                 xposed: None,
                 zygisk: None,
+                watch_path: None,
+                push_path: None,
             },
         );
 
@@ -165,7 +168,6 @@ impl FripackConfig {
                 platform: Some("arm64-v8a".to_string()),
                 version: Some("1.0.0".to_string()),
                 frida_version: Some("17.5.1".to_string()),
-                mode: Some("embedjs".to_string()),
                 entry: Some("main.js".to_string()),
                 xz: Some(false),
                 override_prebuild_file: None,
@@ -186,6 +188,8 @@ impl FripackConfig {
                     keystore_pass: "android".to_string(),
                     keystore_alias: "androiddebugkey".to_string(),
                 }),
+                watch_path: None,
+                push_path: None,
             },
         );
 
@@ -198,7 +202,6 @@ impl FripackConfig {
                 platform: Some("arm64-v8a".to_string()),
                 version: Some("1.0.0".to_string()),
                 frida_version: Some("17.5.1".to_string()),
-                mode: Some("embedjs".to_string()),
                 entry: Some("main.js".to_string()),
                 xz: Some(false),
                 override_prebuild_file: None,
@@ -218,6 +221,8 @@ impl FripackConfig {
                     scope: Some("com.example.app1;com.example.app2".to_string()),
                 }),
                 sign: None,
+                watch_path: None,
+                push_path: None,
             },
         );
 
@@ -292,7 +297,6 @@ pub struct TargetConfig {
     pub version: Option<String>,
     #[serde(rename = "fridaVersion")]
     pub frida_version: Option<String>,
-    pub mode: Option<String>,
     pub entry: Option<String>,
     pub xz: Option<bool>,
     #[serde(rename = "overridePrebuildFile")]
@@ -310,6 +314,10 @@ pub struct TargetConfig {
     pub inject_apk: Option<InjectApkConfig>,
     pub xposed: Option<XposedConfig>,
     pub zygisk: Option<ZygiskConfig>,
+    #[serde(rename = "watchPath")]
+    pub watch_path: Option<String>,
+    #[serde(rename = "pushPath")]
+    pub push_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -412,7 +420,6 @@ pub struct ResolvedTarget {
     pub platform: Option<PlatformConfig>,
     pub version: Option<String>,
     pub frida_version: Option<String>,
-    pub mode: Option<String>,
     pub entry: Option<String>,
     pub xz: Option<bool>,
     pub override_prebuild_file: Option<String>,
@@ -424,6 +431,9 @@ pub struct ResolvedTarget {
     pub inject_apk: Option<InjectApkConfig>,
     pub xposed: Option<XposedConfig>,
     pub zygisk: Option<ZygiskConfig>,
+    pub watch_path: Option<String>,
+    pub push_path: Option<String>,
+    pub watch_mode: bool,
 }
 
 impl ResolvedTarget {
@@ -434,7 +444,6 @@ impl ResolvedTarget {
             target_type,
             version,
             frida_version,
-            mode,
             entry,
             xz,
             override_prebuild_file,
@@ -445,7 +454,9 @@ impl ResolvedTarget {
             after_build,
             inject_apk,
             xposed,
-            zygisk
+            zygisk,
+            watch_path,
+            push_path
         );
 
         if let Some(platform_str) = &other.platform {

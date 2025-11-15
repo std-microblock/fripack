@@ -62,6 +62,9 @@ memchr = "2.7.6"
 # ZIP file creation
 zip = "0.6"
 
+# File watching
+notify-debouncer-full = "*"
+
 [profile.release]
 lto = true
 codegen-units = 1

@@ -1,5 +1,5 @@
 use crate::binary::BinaryProcessor;
-use crate::config::{Platform, ResolvedConfig, ResolvedTarget};
+use crate::config::{Platform, ResolvedConfig, ResolvedTarget, TargetConfig};
 use crate::downloader::Downloader;
 use anyhow::Result;
 use log::{info, warn};
@@ -8,56 +8,55 @@ use std::path::{Path, PathBuf};
 use tokio::{fs, process::Command};
 
 pub struct Builder {
-    config: ResolvedConfig,
     downloader: Downloader,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
 enum Mode {
     EmbedJs = 1,
-    Noop = 2,
+    WatchPath = 2,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 struct EmbeddedConfigData {
     mode: Mode,
     js_filepath: Option<String>,
     js_content: Option<String>,
+    watch_path: Option<String>,
 }
 
 impl Builder {
-    pub fn new(config: &ResolvedConfig) -> Self {
+    pub fn new() -> Self {
         Self {
-            config: config.clone(),
             downloader: Downloader::new(),
         }
     }
 
-    pub async fn build_target(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<()> {
+    pub async fn build_target(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<Option<String>> {
         // Run beforeBuild hook
         if let Some(cmd) = &target.before_build {
             self.run_hook(cmd).await?;
         }
 
         let build_result = match target.target_type.as_deref() {
-            Some("shared") => self.build_shared(target_name, target).await,
-            Some("xposed") => self.build_xposed(target_name, target).await,
-            Some("inject-apk") => self.build_inject_apk(target_name, target).await,
-            Some("zygisk") => self.build_zygisk(target_name, target).await,
+            Some("shared") => Some(self.build_shared(target_name, target).await?),
+            Some("xposed") => Some(self.build_xposed(target_name, target).await?),
+            Some("inject-apk") => Some(self.build_inject_apk(target_name, target).await?),
+            Some("zygisk") => Some(self.build_zygisk(target_name, target).await?),
             Some(other) => anyhow::bail!("Unsupported target type: {other}"),
             None => {
                 warn!("Target type not specified for target: {target_name}, skipping...");
-                Ok(())
+                None
             }
         };
 
         // Run afterBuild hook if build succeeded
-        if build_result.is_ok() {
+        if build_result.is_some() {
             if let Some(cmd) = &target.after_build {
                 self.run_hook(cmd).await?;
             }
         }
 
-        build_result
+        Ok(build_result)
     }
 
     async fn run_hook(&self, cmd: &str) -> Result<()> {
@@ -88,10 +87,11 @@ impl Builder {
             .frida_version
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing required field: fridaVersion"))?;
-        let entry = target
-            .entry
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Missing required field: entry"))?;
+        let mode = if target.watch_mode {
+            "watchpath"
+        } else {
+            "embedjs"
+        };
         let use_xz = target.xz.unwrap_or(false);
 
         // Get prebuilt file data
@@ -114,18 +114,42 @@ impl Builder {
                 .await?
         };
 
-        // Read entry file
-        info!("→ Reading entry file: {entry}");
-        let entry_data = fs::read(entry).await?;
-
         // Process the binary
         info!("→ Processing binary...");
         let mut processor = BinaryProcessor::new(prebuilt_data)?;
 
-        let config_data = EmbeddedConfigData {
-            mode: Mode::EmbedJs,
-            js_filepath: Some(entry.clone()),
-            js_content: Some(String::from_utf8_lossy(&entry_data).to_string()),
+        let config_data = match mode {
+            "embedjs" => {
+                let entry = target
+                    .entry
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("Missing required field: entry for embedjs mode"))?;
+                
+                // Read entry file
+                info!("→ Reading entry file: {entry}");
+                let entry_data = fs::read(entry).await?;
+
+                EmbeddedConfigData {
+                    mode: Mode::EmbedJs,
+                    js_filepath: Some(entry.clone()),
+                    js_content: Some(String::from_utf8_lossy(&entry_data).to_string()),
+                    watch_path: None,
+                }
+            }
+            "watchpath" => {
+                let push_path = target
+                    .push_path
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("Missing required field: pushPath for watchpath mode"))?;
+
+                EmbeddedConfigData {
+                    mode: Mode::WatchPath,
+                    js_filepath: None,
+                    js_content: None,
+                    watch_path: Some(push_path.clone()),
+                }
+            }
+            _ => anyhow::bail!("Unsupported mode: {mode}"),
         };
 
         let config_data = serde_json::to_string(&config_data)?;
@@ -142,7 +166,7 @@ impl Builder {
         Ok(output_data)
     }
 
-    async fn build_shared(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<()> {
+    async fn build_shared(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<String> {
         let base_name = target.target_base_name.as_deref().unwrap_or(target_name);
         info!("→ Building Shared Library target: {target_name} (base name: {base_name})");
 
@@ -163,10 +187,10 @@ impl Builder {
             output_file_path.display()
         );
 
-        Ok(())
+        Ok(output_file_path.to_string_lossy().to_string())
     }
 
-    async fn build_xposed(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<()> {
+    async fn build_xposed(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<String> {
         let base_name = target.target_base_name.as_deref().unwrap_or(target_name);
         info!("→ Building Xposed target: {target_name} (base name: {base_name})");
 
@@ -453,6 +477,7 @@ doNotCompress:
             std::fs::create_dir_all(output_dir)?;
             fs::copy(&signed_apk_path, &final_apk_path).await?;
             info!("✓ Copied signed APK to: {}", final_apk_path.display());
+            Ok(final_apk_path.to_string_lossy().to_string())
         } else {
             // If not signing, just copy the unsigned APK
             let unsigned_apk_path = temp_path.join("dist").join("app-debug.apk");
@@ -461,12 +486,12 @@ doNotCompress:
             std::fs::create_dir_all(output_dir)?;
             fs::copy(&unsigned_apk_path, &final_apk_path).await?;
             info!("✓ Copied APK to: {}", final_apk_path.display());
+            Ok(final_apk_path.to_string_lossy().to_string())
         }
 
-        Ok(())
     }
 
-    async fn build_inject_apk(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<()> {
+    async fn build_inject_apk(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<String> {
         let base_name = target.target_base_name.as_deref().unwrap_or(target_name);
         info!("→ Building Inject APK target: {target_name} (base name: {base_name})");
 
@@ -674,10 +699,10 @@ doNotCompress:
             "✓ Successfully built inject APK: {}",
             final_apk_path.display()
         );
-        Ok(())
+        Ok(final_apk_path.to_string_lossy().to_string())
     }
 
-    async fn build_zygisk(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<()> {
+    async fn build_zygisk(&mut self, target_name: &str, target: &ResolvedTarget) -> Result<String> {
         let base_name = target.target_base_name.as_deref().unwrap_or(target_name);
         info!("→ Building Zygisk target: {target_name} (base name: {base_name})");
 
@@ -770,7 +795,7 @@ doNotCompress:
 
         info!("✓ Successfully built zygisk module: {}", zip_path.display());
 
-        Ok(())
+        Ok(zip_path.to_string_lossy().to_string())
     }
 
     async fn extract_apk_from_device(&self, package_name: &str) -> Result<PathBuf> {
@@ -891,24 +916,6 @@ doNotCompress:
         } else {
             anyhow::bail!("No .so files found in library directory");
         }
-    }
-
-    pub async fn build_all(&mut self) -> Result<()> {
-        info!("Building all targets...");
-
-        let targets: Vec<(String, ResolvedTarget)> = self
-            .config
-            .targets
-            .iter()
-            .map(|(name, target)| (name.clone(), target.clone()))
-            .collect();
-
-        for (target_name, target) in targets {
-            self.build_target(&target_name, &target).await?;
-        }
-
-        info!("✓ All targets built successfully!");
-        Ok(())
     }
 }
 

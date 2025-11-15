@@ -11,6 +11,7 @@
     "xp": {
         "inherit": "base",
         "type": "xposed",
+        "mode": "watchpath",
         "platform": "android-arm64",
         "xposed": {
             "packageName": "com.fripack.examplexposedmodule",
@@ -22,8 +23,8 @@
             "keystorePass": "android",
             "keystoreAlias": "androiddebugkey"
         },
-        "afterBuild": "adb install fripack/fripack-android-arm64.apk",
-        // "overridePrebuildFile": "E:\\fripack\\build\\fripack-inject\\build\\android\\arm64-v8a\\debug\\libfripack-inject.so",
+        // "afterBuild": "adb install fripack/fripack-android-arm64.apk",
+        "overridePrebuildFile": "E:\\fripack\\build\\fripack-inject\\build\\android\\arm64-v8a\\debug\\libfripack-inject.so",
     },
     "xp-arm32": {
         "inherit": "xp",
@@ -67,6 +68,13 @@
             "name": "Fripack Zygisk Module Example",
             "scope": "com.yunzhi.tiyu;com.hypergryph.skland;com.hypergryph.arknights;com.qihoo.zhinao",
         },
+    },
+    "xp-watch": {
+        "inherit": "xp",
+        "mode": "watchpath",
+        "watchPath": "./scripts",
+        "pushPath": "/data/local/tmp/",
+        "entry": "main.js"
     },
     // "inject-apk": {
     //     "inherit": "base",

@@ -40,8 +40,7 @@ Fripack 使用一个名为 `fripack.json` 的配置文件，该文件支持 JSON
         "platform": "android-arm64",
         "xposed": {
             "packageName": "com.example.myxposedmodule",
-            "name": "我的 Xposed 模块",
-            "scope": "com.example.app1;com.example.app2"
+            "name": "我的 Xposed 模块"
         },
         "sign": {
             "keystore": "./.android/debug.keystore",
@@ -64,6 +63,12 @@ fripack build
 fripack build xposed
 ```
 
+或者监听特定目标的文件变化：
+
+```bash
+fripack watch xposed
+```
+
 ---
 
 ### 通用配置选项
@@ -82,6 +87,8 @@ fripack build xposed
 - `targetBaseName` (可选): 输出文件的基础名称（默认为目标键名）。
 - `beforeBuild` (可选): 在构建目标之前执行的命令。
 - `afterBuild` (可选): 在成功构建目标之后执行的命令。
+- `watchPath` (watchpath 模式必需): 监听文件变化的目录。
+- `pushPath` (watch 模式必需): 在 watch 模式下推送 JavaScript 文件到设备的目标路径。
 
 使用继承来避免重复配置的示例：
 
@@ -227,9 +234,29 @@ fripack build xposed
 }
 ```
 
+### 使用 Fripack 开发 Frida 脚本
+
+Fripack 支持用于开发的监听模式，可以实现 JavaScript 文件的热重载而无需重新构建整个包。
+
+#### 使用方法
+
+开始监听一个目标：
+
+```bash
+fripack watch my-watch-target
+```
+
+监听进程将会：
+1. 初始构建并安装目标。注意，对于类型不是 `xposed` 的目标，你需要手动安装目标。
+2. 监听文件变化
+3. 检测到变化时自动更新
+4. 持续运行直到你按下 Ctrl+C
+
+**注意**：监听模式需要安装 `adb` 并在 PATH 中可访问，以便推送文件和安装包到 Android 设备。
+
 ---
 
-## 注意事项
+## Notes
 ### 如何查看日志？
 在 Android 上，日志通过 Android 日志系统输出，标签为 `FriPackInject`。你可以使用 adb 查看它们：
 ```bash
@@ -245,9 +272,9 @@ adb logcat FriPackInject:D *:S
 在其他平台上，日志会定向到 `stdout`。
 
 ### ReferenceError: 'Java' is not defined
-从 Frida 17.0.0 开始，`frida-java-bridge` 不再与 Frida 的 GumJS 运行时捆绑在一起。这意味着用户现在必须明确引入他们想要使用的桥接器。
+从 Frida 17.0.0 开始，桥接器不再与 Frida 的 GumJS 运行时捆绑在一起。这意味着用户现在必须明确引入他们想要使用的桥接器。
 
-在打包之前，你必须安装 `frida-java-bridge` 并通过 `frida-compile` 构建脚本。查看 https://frida.re/docs/bridges/ 了解更多详情。
+你必须安装桥接器并通过 `frida-compile` 构建脚本，然后再进行打包。查看 https://frida.re/docs/bridges/ 了解更多详情。
 
 ## 致谢
 

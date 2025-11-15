@@ -62,6 +62,12 @@ Or build a specific target (e.g., `xposed`) with:
 fripack build xposed
 ```
 
+Or watch a specific target for changes with:
+
+```bash
+fripack watch xposed
+```
+
 ---
 
 ### Universal Configuration Options
@@ -80,6 +86,8 @@ The following options are available for all target types:
 - `targetBaseName` (optional): Base name for output files (defaults to target key).
 - `beforeBuild` (optional): Command to execute before building the target.
 - `afterBuild` (optional): Command to execute after successfully building the target.
+- `watchPath` (required for `watchpath` mode): Directory to watch for file changes.
+- `pushPath` (required for `watchpath` mode): Destination path on device for pushing JavaScript files when in `watch` mode.
 
 Example using inheritance to avoid repetition:
 
@@ -223,6 +231,27 @@ Builds your Frida script into a Zygisk module for Magisk. Only supports `Android
     }
 }
 ```
+
+### Developing Frida Script with Fripack
+
+Fripack supports a watch mode for development that enables hot-reloading of JavaScript files without rebuilding the entire package.
+
+#### Usage
+
+Start watching a target:
+
+```bash
+fripack watch my-watch-target
+```
+
+The watch process will:
+1. Build and install the target initially. Note that for targets with types other than `xposed`, you'll have to install the target manually.
+2. Monitor for file changes
+3. Automatically update when changes are detected
+4. Continue running until you press Ctrl+C
+
+**Note**: Watch mode requires `adb` to be installed and accessible in your PATH for pushing files and installing packages to Android devices.
+
 
 ---
 
